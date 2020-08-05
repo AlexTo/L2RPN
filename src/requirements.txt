@@ -1,1 +1,3 @@
-grid2op==1.2.0
+grid2op
+l2rpn_baselines
+tensorflow

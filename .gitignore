@@ -1,3 +1,7 @@
 __pycache__
 .ipynb_checkpoints
 .idea
+ignore*
+/src/notebooks/baselines/logs-evals/
+/src/notebooks/baselines/logs-train/
+/src/notebooks/baselines/models/
