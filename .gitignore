@@ -5,3 +5,4 @@ ignore*
 /src/notebooks/baselines/logs-evals/
 /src/notebooks/baselines/logs-train/
 /src/notebooks/baselines/models/
+/src/notebooks/baselines/logs-eval/
