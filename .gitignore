@@ -6,3 +6,7 @@ ignore*
 /src/notebooks/baselines/logs-train/
 /src/notebooks/baselines/models/
 /src/notebooks/baselines/logs-eval/
+/submissions
+/results
+*.zip
+/notebooks/utils/last_submission_results/
