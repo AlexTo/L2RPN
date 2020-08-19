@@ -1,8 +1,17 @@
 import os
 from .DeepQ_NNParam import DeepQ_NNParam
 from .DeepQSimple import DeepQSimple
+from .MyReward import MyReward
 
 name = "DeepQSimple"
+
+
+class reward(MyReward):
+    def __init__(self):
+        MyReward.__init__(self)
+
+    def __call__(self, *args, **kwargs):
+        return MyReward.__call__(self, *args, **kwargs)
 
 
 def make_agent(env, submission_dir):

@@ -1,8 +1,17 @@
 import os
 from .DuelQ_NNParam import DuelQ_NNParam
 from .DuelQSimple import DuelQSimple
+from .MyReward import MyReward
 
 name = "DuelQSimple"
+
+
+class reward(MyReward):
+    def __init__(self):
+        MyReward.__init__(self)
+
+    def __call__(self, *args, **kwargs):
+        return MyReward.__call__(self, *args, **kwargs)
 
 
 def make_agent(env, submission_dir):

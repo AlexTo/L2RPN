@@ -19,6 +19,8 @@ from l2rpn_baselines.DeepQSimple.DeepQ_NN import DeepQ_NN
 from l2rpn_baselines.utils import TrainingParam
 from l2rpn_baselines.utils.waring_msgs import _WARN_GPU_MEMORY
 
+from .MyReward import MyReward
+
 
 def train(env,
           name=DEFAULT_NAME,
@@ -215,29 +217,6 @@ if __name__ == "__main__":
         backend = PandaPowerBackend()
 
     args = cli_train().parse_args()
-
-
-    # is it highly recommended to modify the reward depening on the algorithm.
-    # for example here i will push my algorithm to learn that plyaing illegal or ambiguous action is bad
-    class MyReward(L2RPNReward):
-        def initialize(self, env):
-            self.reward_min = 0.0
-            self.reward_max = 1.0
-
-        def __call__(self, action, env, has_error, is_done, is_illegal, is_ambiguous):
-            if has_error or is_illegal or is_ambiguous:
-                # previous action was bad
-                res = self.reward_min
-            elif is_done:
-                # really strong reward if an episode is over without game over
-                res = self.reward_max
-            else:
-                res = super().__call__(action, env, has_error, is_done, is_illegal, is_ambiguous)
-                res /= env.n_line
-                if not np.isfinite(res):
-                    res = self.reward_min
-            return res
-
 
     # Use custom params
 
