@@ -84,12 +84,15 @@ def prepare_submission(agent_name):
         os.makedirs(f"{submission_path}/{agent_name}")
 
     for f in os.listdir(result_path):
-        shutil.copyfile(f"{result_path}/{f}", f"{submission_path}/{agent_name}/{f}")
+        if os.path.isfile(f"{result_path}/{f}"):
+            shutil.copyfile(f"{result_path}/{f}", f"{submission_path}/{agent_name}/{f}")
 
     for f in os.listdir(agent_path):
-        shutil.copyfile(f"{agent_path}/{f}", f"{submission_path}/{f}")
-    
+        if os.path.isfile(f"{agent_path}/{f}"):
+            shutil.copyfile(f"{agent_path}/{f}", f"{submission_path}/{f}")
+
     return submission_path
+
 
 def test_submission(model_dir):
     print(INFO_ZIP_CREATE.format(model_dir))

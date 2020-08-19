@@ -13,13 +13,14 @@ import tensorflow as tf
 import warnings
 
 from l2rpn_baselines.utils import cli_train
-from l2rpn_baselines.DeepQSimple.DeepQSimple import DeepQSimple, DEFAULT_NAME
-from l2rpn_baselines.DeepQSimple.DeepQ_NNParam import DeepQ_NNParam
-from l2rpn_baselines.DeepQSimple.DeepQ_NN import DeepQ_NN
+from l2rpn_baselines.DeepQSimple.DeepQSimple import DEFAULT_NAME
 from l2rpn_baselines.utils import TrainingParam
 from l2rpn_baselines.utils.waring_msgs import _WARN_GPU_MEMORY
 
-from .MyReward import MyReward
+from src.agents.DeepQSimple.DeepQSimple import DeepQSimple
+from src.agents.DeepQSimple.DeepQ_NN import DeepQ_NN
+from src.agents.DeepQSimple.DeepQ_NNParam import DeepQ_NNParam
+from src.agents.DeepQSimple.MyReward import MyReward
 
 
 def train(env,

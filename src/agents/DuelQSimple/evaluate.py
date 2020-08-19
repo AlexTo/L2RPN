@@ -9,19 +9,16 @@
 # This file is part of L2RPN Baselines, L2RPN Baselines a repository to host baselines for l2rpn competitions.
 
 import os
-import tensorflow as tf
 
+import tensorflow as tf
 from grid2op.MakeEnv import make
 from grid2op.Runner import Runner
-from grid2op.Reward import *
-from grid2op.Action import *
-
+from l2rpn_baselines.DuelQSimple.DuelQSimple import DEFAULT_NAME
 from l2rpn_baselines.utils.save_log_gif import save_log_gif
-from l2rpn_baselines.DuelQSimple.DuelQSimple import DuelQSimple, DEFAULT_NAME
-from l2rpn_baselines.DuelQSimple.DuelQ_NNParam import DuelQ_NNParam
-from l2rpn_baselines.DuelQSimple.DuelQ_NN import DuelQ_NN
 
-import pdb
+from src.agents.DuelQSimple.DuelQSimple import DuelQSimple
+from src.agents.DuelQSimple.DuelQ_NN import DuelQ_NN
+from src.agents.DuelQSimple.DuelQ_NNParam import DuelQ_NNParam
 
 DEFAULT_LOGS_DIR = "./logs-eval/do-nothing-baseline"
 DEFAULT_NB_EPISODE = 1
@@ -118,7 +115,7 @@ def evaluate(env,
     runner_params = env.get_params_for_runner()
     runner_params["verbose"] = verbose
 
-    if load_path is  None:
+    if load_path is None:
         raise RuntimeError("Cannot evaluate a DeepQSimple if there is nothing to be loaded.")
 
     path_model, path_target_model = DuelQ_NN.get_path_model(load_path, name)
