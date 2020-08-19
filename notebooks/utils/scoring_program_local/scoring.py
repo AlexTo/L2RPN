@@ -100,7 +100,7 @@ def html_error():
 
 
 def cli():
-    DEFAULT_TIMEOUT_SECONDS = 20*60
+    DEFAULT_TIMEOUT_SECONDS = 20 * 60
     DEFAULT_NB_EPISODE = 20
     DEFAULT_KEY_SCORE = "grid_operation_cost"
 
@@ -179,7 +179,7 @@ def compute_episode_score(key_score,
         # DoNothing agent can complete the scenario
         reward_range = [best_reward, zero_reward, worst_reward]
         score_range = [100.0, 0.0, -100.0]
-        
+
     ep_score = np.interp(ep_reward, reward_range, score_range)
     return ep_score
 
@@ -215,14 +215,14 @@ def main():
         step_h += 1
     step_fig, step_axs = create_fig("Completion",
                                     x=step_w, y=step_h,
-                                    height=step_h*260)
+                                    height=step_h * 260)
     step_fig.subplots_adjust(top=0.9, bottom=0.025, hspace=0.35)
     reward_w = 2
     reward_h = max(args.nb_episode // reward_w, 1)
     reward_title = "Cost of grid operation & Custom rewards"
     reward_fig, reward_axs = create_fig(reward_title,
                                         x=reward_w, y=reward_h,
-                                        height=reward_h*260)
+                                        height=reward_h * 260)
     reward_fig.subplots_adjust(top=0.95, bottom=0.025, hspace=0.35)
     episode_index = 0
     score_config = config["score_config"]
@@ -235,7 +235,7 @@ def main():
             # Get info from config
             episode_info = config[env_dir]["episodes_info"][episode_id]
             episode_len = float(episode_info["length"])
-            episode_weight =  episode_len / float(score_config["total_timesteps"])
+            episode_weight = episode_len / float(score_config["total_timesteps"])
 
             # Compute episode files paths
             scenario_dir = os.path.join(input_dir, env_dir, episode_id)
@@ -243,9 +243,9 @@ def main():
             time_json = os.path.join(scenario_dir, TIME_JSON)
             reward_json = os.path.join(scenario_dir, REWARD_JSON)
             if not os.path.isdir(scenario_dir) or \
-               not os.path.exists(meta_json) or \
-               not os.path.exists(time_json) or \
-               not os.path.exists(reward_json):
+                    not os.path.exists(meta_json) or \
+                    not os.path.exists(time_json) or \
+                    not os.path.exists(reward_json):
                 episode_score = -100.0
                 episode_index += 1
                 total_score += episode_weight * episode_score
@@ -312,6 +312,7 @@ def main():
 
 if __name__ == "__main__":
     import traceback
+
     try:
         main()
     except Exception as e:

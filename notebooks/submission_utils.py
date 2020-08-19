@@ -6,6 +6,8 @@ import argparse
 from zipfile import ZipFile
 import pandas as pd
 import traceback
+import shutil
+from datetime import datetime
 
 from utils.zip_for_codalab import zip_for_codalab
 from utils import input_data_check_dir, problem_dir, score_dir, ingestion_program_cmd, scoring_program_cmd
@@ -62,7 +64,7 @@ Here is the information we have:
 """
 my_env = os.environ
 
-EXTRA_INFO_GIF_HTML ="""
+EXTRA_INFO_GIF_HTML = """
 ------------------------------------
          Extra Informations         
 ------------------------------------
@@ -72,17 +74,34 @@ Don't hesitate to have a look at:
 To have high level information about your agent.
 """
 
-def main(model_dir): 
+
+def prepare_submission(agent_name):
+    result_path = f'../results/{agent_name}'
+    agent_path = f'../src/agents/{agent_name}'
+    submission_path = f'../submissions/{agent_name}/sub_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S")}'
+
+    if not os.path.exists(submission_path):
+        os.makedirs(f"{submission_path}/{agent_name}")
+
+    for f in os.listdir(result_path):
+        shutil.copyfile(f"{result_path}/{f}", f"{submission_path}/{agent_name}/{f}")
+
+    for f in os.listdir(agent_path):
+        shutil.copyfile(f"{agent_path}/{f}", f"{submission_path}/{f}")
+    
+    return submission_path
+
+def test_submission(model_dir):
     print(INFO_ZIP_CREATE.format(model_dir))
     archive_path = zip_for_codalab(os.path.join(os.path.abspath(model_dir)))
-    
+
     print(INFO_UNZIP)
     tmp_dir = tempfile.TemporaryDirectory()
     sys.path.append(tmp_dir.name)
     with ZipFile(archive_path, 'r') as zipObj:
         # Extract all the contents of zip file in different directory
         zipObj.extractall(tmp_dir.name)
-    
+
     print(INFO_CONTENT)
     if not os.path.exists(os.path.join(tmp_dir.name, "metadata")):
         raise RuntimeError(ERR_META.format(archive_path))
@@ -90,18 +109,10 @@ def main(model_dir):
         print(INFO_META)
 
     print(INFO_RUNNING)
-    output_submission_ = os.path.join("utils", "last_submission_results")
-    if not os.path.exists(output_submission_):
-        os.mkdir(output_submission_)
-    else:
-        # delete the content of this folder
-        pass
-        for root, dirs, files in os.walk(output_submission_, topdown=False):
-            for name in files:
-                os.remove(os.path.join(root, name))
-            for name in dirs:
-                os.rmdir(os.path.join(root, name))
-    output_submission = os.path.join(output_submission_, "res")
+
+    if model_dir.endswith("/"):
+        model_dir = model_dir[:-1]
+    output_submission = f"{model_dir}_res"
     if not os.path.exists(output_submission):
         os.mkdir(output_submission)
     cmd_ = ingestion_program_cmd(submission_program=tmp_dir.name, output_submission=output_submission)
@@ -124,10 +135,10 @@ def main(model_dir):
         raise RuntimeError("INVALID SUBMISSION")
     else:
         print(INFO_RUN_SUCCESS)
-    
+
     print(INFO_RESULT)
-    input_scoring = os.path.split(output_submission)[0]
-    output_scoring = os.path.split(output_submission)[0]
+    input_scoring = output_submission
+    output_scoring = output_submission
     cmd_ = scoring_program_cmd(input_scoring=input_scoring,
                                output_scoring=output_scoring)
     li_cmd = cmd_.split()
@@ -148,7 +159,7 @@ def main(model_dir):
     res = pd.DataFrame(scores)
     print(res)
 
-    print(EXTRA_INFO_GIF_HTML.format(output_submission_))
+    print(EXTRA_INFO_GIF_HTML.format(output_submission))
     return res
 
 
@@ -162,7 +173,7 @@ def cli():
 if __name__ == "__main__":
     args = cli()
     try:
-        main(args.model_dir)
+        test_submission(args.model_dir)
     except Exception as exc_:
 
         print("------------------------------------")
@@ -175,7 +186,7 @@ if __name__ == "__main__":
         print("------------------------------------")
         print("      End Detailed error Logs       ")
         print("------------------------------------")
-        
+
         # attempt to help with debug
         res_debug = subprocess.run(
             [
@@ -194,7 +205,7 @@ if __name__ == "__main__":
             print("------------------------------------------------")
             print("    END Automatic Help for DEBUGGING IMPORTS    ")
             print("------------------------------------------------")
-            
+
         print()
         print()
         print("------------------------------------")

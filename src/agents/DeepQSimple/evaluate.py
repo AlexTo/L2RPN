@@ -21,7 +21,6 @@ from l2rpn_baselines.DeepQSimple.DeepQSimple import DeepQSimple, DEFAULT_NAME
 from l2rpn_baselines.DeepQSimple.DeepQ_NNParam import DeepQ_NNParam
 from l2rpn_baselines.DeepQSimple.DeepQ_NN import DeepQ_NN
 
-
 DEFAULT_LOGS_DIR = "./logs-eval/do-nothing-baseline"
 DEFAULT_NB_EPISODE = 1
 DEFAULT_NB_PROCESS = 1
@@ -176,6 +175,7 @@ def evaluate(env,
         save_log_gif(logs_path, res)
 
     return agent, res
+
 
 if __name__ == "__main__":
     from grid2op.Reward import L2RPNSandBoxScore, L2RPNReward

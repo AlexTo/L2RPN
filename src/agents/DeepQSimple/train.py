@@ -295,7 +295,7 @@ if __name__ == "__main__":
     tp.buffer_size = 1000000
 
     # e greedy
-    tp.min_observation = 100
+    tp.min_observation = 5000
     tp.initial_epsilon = 0.4
     tp.final_epsilon = 1. / (2 * 7 * 288.)
     tp.step_for_final_epsilon = int(1e5)

@@ -259,7 +259,7 @@ if __name__ == "__main__":
                )
     # env.chronics_handler.set_max_iter(7*288)
     try:
-        env.chronics_handler.real_data.set_filter(lambda x: re.match(".*((03)|(72)|(57))$", x) is not None)
+        # env.chronics_handler.real_data.set_filter(lambda x: re.match(".*((03)|(72)|(57))$", x) is not None)
         env.chronics_handler.real_data.reset()
     except RuntimeError as exc_:
         raise exc_
