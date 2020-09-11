@@ -10,3 +10,5 @@ ignore*
 /results
 *.zip
 /notebooks/utils/last_submission_results/
+
+config.json
