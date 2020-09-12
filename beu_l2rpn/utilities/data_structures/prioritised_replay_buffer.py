@@ -1,7 +1,7 @@
 import numpy as np
 import torch
-from utilities.data_structures.deque import Deque
-from utilities.data_structures.max_heap import MaxHeap
+from beu_l2rpn.utilities.data_structures.deque import Deque
+from beu_l2rpn.utilities.data_structures.max_heap import MaxHeap
 
 
 class PrioritisedReplayBuffer(MaxHeap, Deque):

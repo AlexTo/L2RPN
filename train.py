@@ -1,11 +1,11 @@
 import json
 
 import grid2op
-from grid2op.Reward import LinesReconnectedReward, CloseToOverflowReward, RedispReward, CombinedScaledReward, \
+from grid2op.Reward import LinesReconnectedReward, CloseToOverflowReward, CombinedScaledReward, \
     L2RPNReward
 
-from rewards.game_play_reward import GameplayReward
-from src.agent import BeUAgent
+from beu_l2rpn.rewards.game_play_reward import GameplayReward
+from beu_l2rpn.agent import BeUAgent
 
 
 def train(env, conf):

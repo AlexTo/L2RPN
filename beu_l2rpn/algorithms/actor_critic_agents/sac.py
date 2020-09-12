@@ -2,10 +2,10 @@ import torch
 import torch.nn.functional as F
 from torch.distributions import Normal
 from torch.optim import Adam
-from utilities.ou_noise import OUNoise
+from beu_l2rpn.utilities.ou_noise import OUNoise
 
-from agents.base_agent import BaseAgent
-from utilities.data_structures.replay_buffer import ReplayBuffer
+from beu_l2rpn.algorithms.base_agent import BaseAgent
+from beu_l2rpn.utilities.data_structures.replay_buffer import ReplayBuffer
 
 LOG_SIG_MAX = 2
 LOG_SIG_MIN = -20

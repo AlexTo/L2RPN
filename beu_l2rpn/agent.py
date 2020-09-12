@@ -1,4 +1,4 @@
-from agents.actor_critic_agents.sac_discrete import SACDiscrete
+from beu_l2rpn.algorithms.actor_critic_agents.sac_discrete import SACDiscrete
 
 
 class BeUAgent(SACDiscrete):
@@ -40,15 +40,12 @@ class BeUAgent(SACDiscrete):
 
     def save_experience(self, memory=None, experience=None):
         # TODO: Override this to save experience with TD error to re-prioritize samples
-        return SACDiscrete.save_experience(memory, experience)
+        return SACDiscrete.save_experience(self, memory, experience)
 
     def my_act(self, transformed_observation, reward, done=False):
-        # TODO: Incorporate expert logic from Geirina and KAIST here. For e.g.
-        # First, try to reconnect any powerline  if any disconnected
-        # Second, try to predict whether the power grid will be in danger if we do nothing. Both Geirina and KAIST will
-        # do-nothing unless necessary
-        # If do nothing put the power grid in danger, then use the neural net to predict action
-        a = 0
+        self.env.cu
+
+
         return a
 
     def init_graph(self):

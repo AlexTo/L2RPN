@@ -6,6 +6,7 @@ import argparse
 from zipfile import ZipFile
 import pandas as pd
 import traceback
+import distutils.dir_util
 import shutil
 from datetime import datetime
 
@@ -75,22 +76,16 @@ To have high level information about your agent.
 """
 
 
-def prepare_submission(agent_name):
-    result_path = f'../results/{agent_name}'
-    agent_path = f'../src/agents/{agent_name}'
-    submission_path = f'../submissions/{agent_name}/sub_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S")}'
+def prepare_submission():
+    result_path = f'../results'
+    agent_path = f'../beu_l2rpn'
+    submission_path = f'../submissions/sub_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S")}'
 
-    if not os.path.exists(submission_path):
-        os.makedirs(f"{submission_path}/{agent_name}")
-
-    for f in os.listdir(result_path):
-        if os.path.isfile(f"{result_path}/{f}"):
-            shutil.copyfile(f"{result_path}/{f}", f"{submission_path}/{agent_name}/{f}")
-
-    for f in os.listdir(agent_path):
-        if os.path.isfile(f"{agent_path}/{f}"):
-            shutil.copyfile(f"{agent_path}/{f}", f"{submission_path}/{f}")
-
+    distutils.dir_util.copy_tree(result_path, f"{submission_path}/saved_model")
+    distutils.dir_util.copy_tree(agent_path, f"{submission_path}/beu_l2rpn")
+    shutil.copyfile("../__init__.py", f"{submission_path}/__init__.py")
+    shutil.copyfile("../submission.py", f"{submission_path}/submission.py")
+    shutil.copyfile("../config.json", f"{submission_path}/config.json")
     return submission_path
 
 

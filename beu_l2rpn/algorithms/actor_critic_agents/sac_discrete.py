@@ -3,10 +3,10 @@ from torch.optim import Adam
 import torch.nn.functional as F
 import numpy as np
 
-from agents.base_agent import BaseAgent
-from utilities.data_structures.replay_buffer import ReplayBuffer
-from agents.actor_critic_agents.sac import SAC
-from utilities.utility_functions import create_actor_distribution
+from beu_l2rpn.algorithms.base_agent import BaseAgent
+from beu_l2rpn.utilities.data_structures.replay_buffer import ReplayBuffer
+from beu_l2rpn.algorithms.actor_critic_agents.sac import SAC
+from beu_l2rpn.utilities.utility_functions import create_actor_distribution
 
 
 class SACDiscrete(SAC):

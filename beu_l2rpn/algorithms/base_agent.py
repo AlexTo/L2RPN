@@ -6,7 +6,7 @@ import torch
 from grid2op.Agent import AgentWithConverter
 from grid2op.Converter import IdToAct
 
-from nn_builder.pytorch.NN import NN
+from beu_l2rpn.nn_builder.pytorch.nn import NN
 
 
 class BaseAgent(AgentWithConverter):
