@@ -17,8 +17,8 @@ class BaseAgent(AgentWithConverter):
         self.action_space.filter_action(self.filter_action)
 
         self.config = config
-        self.set_random_seeds(config["seed"])
         self.env = env
+        self.set_random_seeds(config["seed"])
 
         self.action_size = int(self.action_space.size())
 
@@ -40,13 +40,13 @@ class BaseAgent(AgentWithConverter):
     def filter_action(self, action):
         raise NotImplementedError("filter_action needs to be implemented by the agent")
 
-    @staticmethod
-    def set_random_seeds(random_seed):
+    def set_random_seeds(self, random_seed):
         """Sets all possible random seeds so results can be reproduced"""
         os.environ['PYTHONHASHSEED'] = str(random_seed)
         torch.manual_seed(random_seed)
         random.seed(random_seed)
         np.random.seed(random_seed)
+        self.env.seed(random_seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(random_seed)
             torch.cuda.manual_seed(random_seed)
