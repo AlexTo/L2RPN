@@ -6,7 +6,7 @@ import numpy as np
 from beu_l2rpn.algorithms.base_agent import BaseAgent
 from beu_l2rpn.utilities.data_structures.replay_buffer import ReplayBuffer
 from beu_l2rpn.algorithms.actor_critic_agents.sac import SAC
-from beu_l2rpn.utilities.utility_functions import create_actor_distribution
+from beu_l2rpn.utilities.utility_functions import create_actor_distribution, init_obs_extraction
 
 
 class SACDiscrete(SAC):
@@ -22,6 +22,10 @@ class SACDiscrete(SAC):
                    "final_layer_activation"] == "Softmax", "Final actor layer must be softmax"
 
         self.hyper_parameters = config["hyper_parameters"]
+
+        obs_idx, obs_size = init_obs_extraction(self.observation_space, self.hyper_parameters["selected_attributes"])
+        self.state_size = int(obs_size)
+        self.obs_idx = obs_idx
 
         self.critic_local = self.create_nn(input_dim=self.state_size, output_dim=self.action_size, key_to_use="Critic")
         self.critic_local_2 = self.create_nn(input_dim=self.state_size, output_dim=self.action_size,

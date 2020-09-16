@@ -12,3 +12,4 @@ ignore*
 /notebooks/utils/last_submission_results/
 
 config.json
+check_points

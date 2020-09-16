@@ -39,6 +39,29 @@ def create_actor_distribution(action_types, actor_output, action_size):
     return action_distribution
 
 
+def init_obs_extraction(observation_space, selected_attributes):
+    idx = np.zeros(0, dtype=np.uint)
+    size = 0
+    for obs_attr_name in selected_attributes:
+        beg_, end_, dtype_ = observation_space.get_indx_extract(obs_attr_name)
+        idx = np.concatenate((idx, np.arange(beg_, end_, dtype=np.uint)))
+        size += end_ - beg_  # no "+1" needed because "end_" is exclude by python convention
+    return idx, size
+
+
+def normalize(state):
+    # normalize the state
+    for i, x in enumerate(state):
+        if x >= 1e5:
+            state[i] /= 1e4
+        elif 1e4 <= x < 1e5:
+            state[i] /= 1e3
+        elif 1e3 <= x < 1e4:
+            state[i] /= 1e2
+
+    return state
+
+
 class SharedAdam(torch.optim.Adam):
     """Creates an adam optimizer object that is shareable between processes. Useful for algorithms like A3C. Code
     taken from https://github.com/ikostrikov/pytorch-a3c/blob/master/my_optim.py"""

@@ -1,3 +1,8 @@
+import json
+import os
+import numpy as np
+from datetime import datetime
+
 import torch
 import torch.nn.functional as F
 from torch.distributions import Normal
@@ -27,23 +32,32 @@ class SAC(BaseAgent):
                    "final_layer_activation"] != "Softmax", "Final actor layer must not be softmax"
 
         self.hyper_parameters = config["hyper_parameters"]
+
+        obs_idx, obs_size = self.init_obs_extraction()
+        self.state_size = int(obs_size)
+        self.obs_idx = obs_idx
+
         self.critic_local = self.create_nn(input_dim=self.state_size + self.action_size, output_dim=1,
                                            key_to_use="Critic")
+
         self.critic_local_2 = self.create_nn(input_dim=self.state_size + self.action_size, output_dim=1,
                                              key_to_use="Critic", override_seed=self.config["seed"] + 1)
+
         self.critic_optimizer = torch.optim.Adam(self.critic_local.parameters(),
                                                  lr=self.hyper_parameters["Critic"]["learning_rate"], eps=1e-4)
         self.critic_optimizer_2 = torch.optim.Adam(self.critic_local_2.parameters(),
                                                    lr=self.hyper_parameters["Critic"]["learning_rate"], eps=1e-4)
+
         self.critic_target = self.create_nn(input_dim=self.state_size + self.action_size, output_dim=1,
                                             key_to_use="Critic")
         self.critic_target_2 = self.create_nn(input_dim=self.state_size + self.action_size, output_dim=1,
                                               key_to_use="Critic")
+
         BaseAgent.copy_model_over(self.critic_local, self.critic_target)
         BaseAgent.copy_model_over(self.critic_local_2, self.critic_target_2)
 
-        self.memory = ReplayBuffer(self.hyper_parameters["Critic"]["buffer_size"], self.hyper_parameters["batch_size"],
-                                   self.config["seed"])
+        self.memory = ReplayBuffer(self.hyper_parameters["Critic"]["buffer_size"],
+                                   self.hyper_parameters["batch_size"], self.config["seed"])
 
         self.actor_local = self.create_nn(input_dim=self.state_size, output_dim=self.action_size * 2,
                                           key_to_use="Actor")
@@ -78,7 +92,7 @@ class SAC(BaseAgent):
         if self.add_extra_noise:
             self.noise.reset()
 
-    def step(self):
+    def run_episode(self):
         """Runs an episode on the game, saving the experience and running a learning step if appropriate"""
         eval_ep = self.episode_number % TRAINING_EPISODES_PER_EVAL_EPISODE == 0 and self.do_evaluation_iterations
         self.episode_step_number_val = 0
@@ -96,7 +110,7 @@ class SAC(BaseAgent):
             self.state = self.next_state
             self.global_step_number += 1
 
-        self.print_summary_of_latest_evaluation_episode()
+        self.summarize_of_latest_evaluation_episode()
         self.episode_number += 1
 
     def pick_action(self, eval_ep, state=None):
@@ -215,7 +229,8 @@ class SAC(BaseAgent):
             self.take_optimisation_step(self.alpha_optim, None, alpha_loss, None)
             self.alpha = self.log_alpha.exp()
 
-    def print_summary_of_latest_evaluation_episode(self):
+    def summarize_of_latest_evaluation_episode(self):
+
         """Prints a summary of the latest episode"""
         print(" ")
         print("----------------------------")
@@ -225,3 +240,33 @@ class SAC(BaseAgent):
             f"Steps alive: {self.episode_step_number_val} | "
             f"Score {self.total_episode_score_so_far}")
         print("----------------------------")
+
+    def save_model(self):
+        cfg = self.config
+        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+        save_dir = os.path.join(cfg["check_point_folder"], f"{timestamp}_episode_{self.episode_number}")
+        os.makedirs(save_dir)
+        torch.save({
+            "resume_episode": self.episode_number,
+            "global_step_number": self.global_step_number,
+            "critic_local": self.critic_local.state_dict(),
+            "critic_local_2": self.critic_local_2.state_dict(),
+            "critic_target": self.critic_target.state_dict(),
+            "critic_target_2": self.critic_target_2.state_dict(),
+            "actor_local": self.actor_local.state_dict(),
+        }, os.path.join(save_dir, "model.pth"))
+
+        with open(os.path.join(save_dir, 'config.json'), 'w') as f:
+            json.dump(cfg, f, indent=4)
+
+        # TODO: to resume, we also have to save the experience replay
+
+    def load_model(self, path):
+        chk_point = torch.load(path, map_location=self.device)
+        self.episode_number = chk_point["resume_episode"]
+        self.global_step_number = chk_point["global_step_number"]
+        self.critic_local.load_state_dict(chk_point["critic_local"])
+        self.critic_local_2.load_state_dict(chk_point["critic_local_2"])
+        self.critic_target.load_state_dict(chk_point["critic_target"])
+        self.critic_target_2.load_state_dict(chk_point["critic_target_2"])
+        self.actor_local.load_state_dict(chk_point["actor_local"])

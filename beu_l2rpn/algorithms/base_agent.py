@@ -18,19 +18,22 @@ class BaseAgent(AgentWithConverter):
 
         self.config = config
         self.env = env
+        self.observation_space = env.observation_space
         self.set_random_seeds(config["seed"])
 
         self.action_size = int(self.action_space.size())
-
         self.state_size = int(env.observation_space.size())
         self.hyper_parameters = config["hyper_parameters"]
 
+        self.frames = []  # last n-1 frames, including current frame
+        self.frames2 = []  # last n-2 frames, current frame and next frame
         self.episode_number = 0
-        self.device = "cuda:0" if config["use_gpu"] else "cpu"
+        self.resume_episode = -1
+        self.device = torch.device("cuda" if config["use_gpu"] and torch.cuda.is_available() else "cpu")
         self.global_step_number = 0
         self.turn_off_exploration = False
 
-    def step(self):
+    def run_episode(self):
         """Takes a step in the game. This method must be overriden by any agent"""
         raise NotImplementedError("step needs to be implemented by the agent")
 
@@ -194,3 +197,11 @@ class BaseAgent(AgentWithConverter):
         """Copies model parameters from from_model to to_model"""
         for to_model, from_model in zip(to_model.parameters(), from_model.parameters()):
             to_model.data.copy_(from_model.data.clone())
+
+    def save_model(self):
+        raise NotImplementedError("save_model needs to be implemented by the agent")
+
+    def load_model(self, path):
+        raise NotImplementedError("load_model needs to be implemented by the agent")
+
+

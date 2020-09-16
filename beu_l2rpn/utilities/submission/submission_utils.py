@@ -1,17 +1,19 @@
+import argparse
+import distutils.dir_util
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
-import subprocess
-import argparse
-from zipfile import ZipFile
-import pandas as pd
 import traceback
-import distutils.dir_util
-import shutil
 from datetime import datetime
+from zipfile import ZipFile
 
-from utils.zip_for_codalab import zip_for_codalab
-from utils import input_data_check_dir, problem_dir, score_dir, ingestion_program_cmd, scoring_program_cmd
+import pandas as pd
+
+from beu_l2rpn.utilities.submission import ingestion_program_cmd, \
+    scoring_program_cmd
+from beu_l2rpn.utilities.submission.zip_for_codalab import zip_for_codalab
 
 DEFAULT_MODEL_DIR = 'example_submission/submission'
 
@@ -76,21 +78,22 @@ To have high level information about your agent.
 """
 
 
-def prepare_submission(check_point):
-    agent_path = f'../beu_l2rpn'
-    submission_path = f'../submissions/sub_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S")}'
+def prepare_submission(check_point, root="."):
+    agent_path = f'{root}/beu_l2rpn'
+    submission_path = f'{root}/submissions/sub_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S")}'
 
     distutils.dir_util.copy_tree(check_point, f"{submission_path}/saved_model")
     distutils.dir_util.copy_tree(agent_path, f"{submission_path}/beu_l2rpn")
-    shutil.copyfile("../__init__.py", f"{submission_path}/__init__.py")
-    shutil.copyfile("../submission.py", f"{submission_path}/submission.py")
+    shutil.copyfile(f"{root}/__init__.py", f"{submission_path}/__init__.py")
+    shutil.copyfile(f"{root}/submission.py", f"{submission_path}/submission.py")
     return submission_path
 
 
-def test_submission(model_dir):
+def test_submission(model_dir, score=False):
     print(INFO_ZIP_CREATE.format(model_dir))
     archive_path = zip_for_codalab(os.path.join(os.path.abspath(model_dir)))
-
+    if not score:
+        return
     print(INFO_UNZIP)
     tmp_dir = tempfile.TemporaryDirectory()
     sys.path.append(tmp_dir.name)

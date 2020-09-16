@@ -1,8 +1,17 @@
 {
-  "env": "l2rpn_case14_sandbox",
+  "env": "l2rpn_neurips_2020_track2_small",
   "seed": 2020,
   "use_gpu": true,
+  "check_point_folder": "check_points",
+  "check_point_episodes": 10,
+  "neptune_enabled": false,
+  "neptune_api_token": "your Neptune api token here if enable Neptune",
+  "neptune_project_name": "your Neptune project name here if enable Neptune",
   "hyper_parameters": {
+    "train_num_episodes": 1000,
+    "min_steps_before_learning": 512,
+    "num_frames": 4,
+    "batch_size": 256,
     "learning_rate": 0.005,
     "gradient_clipping_norm": 5.0,
     "discount_rate": 0.99,
@@ -13,8 +22,8 @@
     "Actor": {
       "learning_rate": 0.0003,
       "linear_hidden_units": [
-        64,
-        64
+        256,
+        256
       ],
       "final_layer_activation": "Softmax",
       "batch_norm": false,
@@ -25,8 +34,8 @@
     "Critic": {
       "learning_rate": 0.0003,
       "linear_hidden_units": [
-        64,
-        64
+        256,
+        256
       ],
       "final_layer_activation": "None",
       "batch_norm": false,
@@ -35,8 +44,6 @@
       "gradient_clipping_norm": 5,
       "initializer": "Xavier"
     },
-    "min_steps_before_learning": 400,
-    "batch_size": 256,
     "mu": 0.0,
     "theta": 0.15,
     "sigma": 0.25,
@@ -48,6 +55,23 @@
     "entropy_term_weight": "None",
     "add_extra_noise": false,
     "do_evaluation_iterations": true,
-    "training_episodes_per_eval_episode": 20
+    "training_episodes_per_eval_episode": 20,
+    "selected_attributes": [
+      "day_of_week",
+      "hour_of_day",
+      "minute_of_hour",
+      "prod_p",
+      "prod_v",
+      "load_p",
+      "load_q",
+      "actual_dispatch",
+      "target_dispatch",
+      "topo_vect",
+      "time_before_cooldown_line",
+      "time_before_cooldown_sub",
+      "rho",
+      "timestep_overflow",
+      "line_status"
+    ]
   }
 }
