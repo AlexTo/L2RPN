@@ -24,6 +24,7 @@ class SACDiscrete(SAC):
         self.hyper_parameters = config["hyper_parameters"]
 
         obs_idx, obs_size = init_obs_extraction(self.observation_space, self.hyper_parameters["selected_attributes"])
+
         self.state_size = int(obs_size)
         self.obs_idx = obs_idx
 

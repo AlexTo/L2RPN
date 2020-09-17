@@ -33,10 +33,6 @@ class SAC(BaseAgent):
 
         self.hyper_parameters = config["hyper_parameters"]
 
-        obs_idx, obs_size = self.init_obs_extraction()
-        self.state_size = int(obs_size)
-        self.obs_idx = obs_idx
-
         self.critic_local = self.create_nn(input_dim=self.state_size + self.action_size, output_dim=1,
                                            key_to_use="Critic")
 
@@ -136,6 +132,7 @@ class SAC(BaseAgent):
         from the network and so did not involve any random sampling"""
         if state is None:
             state = self.state
+        state = self.convert_obs(state)
         state = torch.FloatTensor([state]).to(self.device)
         if len(state.shape) == 1:
             state = state.unsqueeze(0)

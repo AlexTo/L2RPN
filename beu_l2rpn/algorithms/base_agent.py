@@ -57,7 +57,7 @@ class BaseAgent(AgentWithConverter):
     def reset_game(self):
         """Resets the game information so we are ready to play a new episode"""
         self.env.seed(self.config["seed"])
-        self.state = self.convert_obs(self.env.reset())
+        self.state = self.env.reset()
         self.next_state = None
         self.action = None
         self.reward = None
@@ -81,11 +81,10 @@ class BaseAgent(AgentWithConverter):
         self.episode_next_states.append(self.next_state)
         self.episode_dones.append(self.done)
 
-    def conduct_action(self, encoded_act):
+    def conduct_action(self, act):
         """Conducts an action in the environment"""
-        act = self.convert_act(encoded_act)
         obs, self.reward, self.done, self.info = self.env.step(act)
-        self.next_state = self.convert_obs(obs)
+        self.next_state = obs
         self.total_episode_score_so_far += self.reward
         if self.hyper_parameters["clip_rewards"]:
             self.reward = max(min(self.reward, 1.0), -1.0)
@@ -203,5 +202,3 @@ class BaseAgent(AgentWithConverter):
 
     def load_model(self, path):
         raise NotImplementedError("load_model needs to be implemented by the agent")
-
-

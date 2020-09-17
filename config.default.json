@@ -22,8 +22,8 @@
     "Actor": {
       "learning_rate": 0.0003,
       "linear_hidden_units": [
-        256,
-        256
+        1024,
+        1024
       ],
       "final_layer_activation": "Softmax",
       "batch_norm": false,
@@ -34,8 +34,8 @@
     "Critic": {
       "learning_rate": 0.0003,
       "linear_hidden_units": [
-        256,
-        256
+        1024,
+        1024
       ],
       "final_layer_activation": "None",
       "batch_norm": false,
@@ -54,8 +54,8 @@
     "automatically_tune_entropy_hyper_parameter": true,
     "entropy_term_weight": "None",
     "add_extra_noise": false,
-    "do_evaluation_iterations": true,
-    "training_episodes_per_eval_episode": 20,
+    "do_evaluation_iterations": false,
+    "training_episodes_per_eval_episode": 1,
     "selected_attributes": [
       "day_of_week",
       "hour_of_day",
