@@ -76,7 +76,7 @@ class SACDiscrete(SAC):
         """Given the state, produces an action, the probability of the action, the log probability of the action, and
         the argmax action"""
         action_probabilities = self.actor_local(state)
-        max_probability_action = torch.argmax(action_probabilities).unsqueeze(0)
+        max_probability_action = torch.argmax(action_probabilities, dim=1)
         action_distribution = create_actor_distribution("DISCRETE", action_probabilities, self.action_size)
         action = action_distribution.sample().cpu()
         # Have to deal with situation of 0.0 probabilities because we can't do log 0
@@ -109,12 +109,10 @@ class SACDiscrete(SAC):
     def calculate_actor_loss(self, state_batch):
         """Calculates the loss for the actor. This loss includes the additional entropy term"""
         action, (action_probabilities, log_action_probabilities), _ = self.produce_action_and_action_info(state_batch)
-        with torch.no_grad():
-            qf1_pi = self.critic_local(state_batch)
-            qf2_pi = self.critic_local_2(state_batch)
+        qf1_pi = self.critic_local(state_batch)
+        qf2_pi = self.critic_local_2(state_batch)
         min_qf_pi = torch.min(qf1_pi, qf2_pi)
         inside_term = self.alpha * log_action_probabilities - min_qf_pi
-        policy_loss = action_probabilities * inside_term
-        policy_loss = policy_loss.sum(dim=1).mean()
+        policy_loss = (action_probabilities * inside_term).sum(dim=1).mean()
         log_action_probabilities = torch.sum(log_action_probabilities * action_probabilities, dim=1)
         return policy_loss, log_action_probabilities

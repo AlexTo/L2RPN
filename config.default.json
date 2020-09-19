@@ -1,19 +1,17 @@
 {
-  "env": "l2rpn_neurips_2020_track2_small",
+  "env": "l2rpn_case14_sandbox",
   "seed": 2020,
   "use_gpu": true,
   "check_point_folder": "check_points",
-  "check_point_episodes": 10,
-  "neptune_enabled": false,
-  "neptune_api_token": "your Neptune api token here if enable Neptune",
-  "neptune_project_name": "your Neptune project name here if enable Neptune",
+  "check_point_episodes": 100,
+  "neptune_enabled": true,
+  "neptune_api_token": "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vdWkubmVwdHVuZS5haSIsImFwaV91cmwiOiJodHRwczovL3VpLm5lcHR1bmUuYWkiLCJhcGlfa2V5IjoiNzU4NjYwZGYtMjRiMy00ODcxLWFjY2EtMGFhY2I3YzYxZTZjIn0=",
+  "neptune_project_name": "alexto/L2RPN",
   "hyper_parameters": {
-    "train_num_episodes": 1000,
-    "min_steps_before_learning": 512,
+    "train_num_episodes": 20000,
+    "min_steps_before_learning": 10000,
     "num_frames": 4,
-    "batch_size": 256,
-    "learning_rate": 0.005,
-    "gradient_clipping_norm": 5.0,
+    "batch_size": 512,
     "discount_rate": 0.99,
     "epsilon_decay_rate_denominator": 1.0,
     "normalise_rewards": true,
@@ -22,27 +20,27 @@
     "Actor": {
       "learning_rate": 0.0003,
       "linear_hidden_units": [
-        1024,
-        1024
+        512,
+        512
       ],
       "final_layer_activation": "Softmax",
       "batch_norm": false,
       "tau": 0.005,
       "gradient_clipping_norm": 5,
-      "initializer": "Xavier"
+      "initialiser": "Xavier"
     },
     "Critic": {
       "learning_rate": 0.0003,
       "linear_hidden_units": [
-        1024,
-        1024
+        512,
+        512
       ],
       "final_layer_activation": "None",
       "batch_norm": false,
       "buffer_size": 1000000,
       "tau": 0.005,
       "gradient_clipping_norm": 5,
-      "initializer": "Xavier"
+      "initialiser": "Xavier"
     },
     "mu": 0.0,
     "theta": 0.15,
@@ -54,24 +52,39 @@
     "automatically_tune_entropy_hyper_parameter": true,
     "entropy_term_weight": "None",
     "add_extra_noise": false,
-    "do_evaluation_iterations": false,
-    "training_episodes_per_eval_episode": 1,
+    "do_evaluation_iterations": true,
+    "training_episodes_per_eval_episode": 10,
     "selected_attributes": [
+      "year",
+      "month",
+      "day",
       "day_of_week",
       "hour_of_day",
       "minute_of_hour",
       "prod_p",
+      "prod_q",
       "prod_v",
       "load_p",
       "load_q",
-      "actual_dispatch",
-      "target_dispatch",
+      "load_v",
+      "p_or",
+      "q_or",
+      "v_or",
+      "a_or",
+      "p_ex",
+      "q_ex",
+      "v_ex",
+      "a_ex",
+      "rho",
       "topo_vect",
+      "line_status",
+      "timestep_overflow",
       "time_before_cooldown_line",
       "time_before_cooldown_sub",
-      "rho",
-      "timestep_overflow",
-      "line_status"
+      "time_next_maintenance",
+      "duration_next_maintenance",
+      "actual_dispatch",
+      "target_dispatch"
     ]
   }
 }

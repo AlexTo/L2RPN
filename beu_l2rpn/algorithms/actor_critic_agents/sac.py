@@ -105,8 +105,8 @@ class SAC(BaseAgent):
                     experience=(self.state, self.action, self.reward, self.next_state, self.done))
             self.state = self.next_state
             self.global_step_number += 1
-
-        self.summarize_of_latest_evaluation_episode()
+        if eval_ep:
+            self.summarize_of_latest_evaluation_episode()
         self.episode_number += 1
 
     def pick_action(self, eval_ep, state=None):
@@ -169,12 +169,16 @@ class SAC(BaseAgent):
         state_batch, action_batch, reward_batch, next_state_batch, mask_batch = self.sample_experiences()
         qf1_loss, qf2_loss = self.calculate_critic_losses(state_batch, action_batch, reward_batch, next_state_batch,
                                                           mask_batch)
+        self.update_critic_parameters(qf1_loss, qf2_loss)
+
         policy_loss, log_pi = self.calculate_actor_loss(state_batch)
+
         if self.automatic_entropy_tuning:
             alpha_loss = self.calculate_entropy_tuning_loss(log_pi)
         else:
             alpha_loss = None
-        self.update_all_parameters(qf1_loss, qf2_loss, policy_loss, alpha_loss)
+
+        self.update_actor_parameters(policy_loss, alpha_loss)
 
     def sample_experiences(self):
         return self.memory.sample()
@@ -210,18 +214,22 @@ class SAC(BaseAgent):
         alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
         return alpha_loss
 
-    def update_all_parameters(self, critic_loss_1, critic_loss_2, actor_loss, alpha_loss):
+    def update_critic_parameters(self, critic_loss_1, critic_loss_2):
         """Updates the parameters for the actor, both critics and (if specified) the temperature parameter"""
         self.take_optimisation_step(self.critic_optimizer, self.critic_local, critic_loss_1,
                                     self.hyper_parameters["Critic"]["gradient_clipping_norm"])
         self.take_optimisation_step(self.critic_optimizer_2, self.critic_local_2, critic_loss_2,
                                     self.hyper_parameters["Critic"]["gradient_clipping_norm"])
-        self.take_optimisation_step(self.actor_optimizer, self.actor_local, actor_loss,
-                                    self.hyper_parameters["Actor"]["gradient_clipping_norm"])
+
         self.soft_update_of_target_network(self.critic_local, self.critic_target,
                                            self.hyper_parameters["Critic"]["tau"])
         self.soft_update_of_target_network(self.critic_local_2, self.critic_target_2,
                                            self.hyper_parameters["Critic"]["tau"])
+
+    def update_actor_parameters(self, actor_loss, alpha_loss):
+        """Updates the parameters for the actor and (if specified) the temperature parameter"""
+        self.take_optimisation_step(self.actor_optimizer, self.actor_local, actor_loss,
+                                    self.hyper_parameters["Actor"]["gradient_clipping_norm"])
         if alpha_loss is not None:
             self.take_optimisation_step(self.alpha_optim, None, alpha_loss, None)
             self.alpha = self.log_alpha.exp()

@@ -49,18 +49,6 @@ class BeUAgent(SACDiscrete):
             else:
                 self.episode_number += 1
 
-    def learn(self):
-        """Runs a learning iteration for the actor, both critics and (if specified) the temperature parameter"""
-        state_batch, action_batch, reward_batch, next_state_batch, mask_batch = self.sample_experiences()
-        qf1_loss, qf2_loss = self.calculate_critic_losses(state_batch, action_batch, reward_batch, next_state_batch,
-                                                          mask_batch)
-        policy_loss, log_pi = self.calculate_actor_loss(state_batch)
-        if self.automatic_entropy_tuning:
-            alpha_loss = self.calculate_entropy_tuning_loss(log_pi)
-        else:
-            alpha_loss = None
-        self.update_all_parameters(qf1_loss, qf2_loss, policy_loss, alpha_loss)
-
     def run_episode(self):
         print(f"Episode: {self.episode_number}")
         """Runs an episode on the game, saving the experience and running a learning step if appropriate"""
@@ -81,17 +69,12 @@ class BeUAgent(SACDiscrete):
             self.global_step_number += 1
 
         self.episode_number += 1
-
-        self.summarize_of_latest_evaluation_episode()
+        if eval_ep:
+            self.summarize_of_latest_evaluation_episode()
 
     def pick_action(self, eval_ep, state=None):
         if state is None:
             state = self.state
-
-        heuristic_act = self.pick_heuristic_action(state)
-        if heuristic_act is not None:
-            print("Picking heuristic action ", self.to_encoded_act(heuristic_act))
-            return heuristic_act
 
         if eval_ep:
             encoded_act = self.actor_pick_action(state=state, eval=True)
@@ -101,16 +84,26 @@ class BeUAgent(SACDiscrete):
             print("Picking random action ", encoded_act)
         else:
             encoded_act = self.actor_pick_action(state=state)
-            print("Picking model predicted action ", encoded_act)
+            print("Picking model sampled action ", encoded_act)
 
         action = self.convert_act(encoded_act)
         return action
 
     def pick_heuristic_action(self, state=None):
+
+        # This function defines some heuristic actions that we can try before seeking prediction from the neural net.
+
         if state is None:
             state = self.state
 
         act = None
+
+        # I. Reconnect powerline
+        #   1. We check if any power line has rho <= 0 (I think rho can't be negative but we check <= 0
+        #      just to make sure
+        #   2. If there is, increase the count by 1, otherwise if rho > 0, reset the count to 0.
+        #   3. If any line with rho <= 0 for 10 time steps, attempt to reconnect it if it doesn't cause game over
+
         zero_rhos = np.where(state.rho <= 0)[0]
 
         for line_id in zero_rhos:
@@ -139,7 +132,8 @@ class BeUAgent(SACDiscrete):
         return act
 
     def summarize_of_latest_evaluation_episode(self):
-        self.expected_return += (self.total_episode_score_so_far - self.expected_return) / self.episode_number
+        self.expected_return += (self.total_episode_score_so_far - self.expected_return) / (
+                    self.episode_number / self.training_episodes_per_eval_episode)
         if self.config["neptune_enabled"]:
             self.neptune.log_metric('expected return', self.expected_return)
 
