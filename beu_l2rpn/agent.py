@@ -82,8 +82,14 @@ class BeUAgent(SACDiscrete):
         elif self.global_step_number < self.hyper_parameters["min_steps_before_learning"]:
             encoded_act = self.random_action()
             print("Picking random action ", encoded_act)
+            # added by Sonvx
+            if self.config["neptune_enabled"]:
+                self.neptune.log_metric('random action', encoded_act)
         else:
             encoded_act = self.actor_pick_action(state=state)
+            # added by Sonvx
+            if self.config["neptune_enabled"]:
+                self.neptune.log_metric('sampled action', encoded_act)
             print("Picking model sampled action ", encoded_act)
 
         action = self.convert_act(encoded_act)
