@@ -5,8 +5,8 @@
   "check_point_folder": "check_points",
   "check_point_episodes": 100,
   "neptune_enabled": true,
-  "neptune_api_token": "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vdWkubmVwdHVuZS5haSIsImFwaV91cmwiOiJodHRwczovL3VpLm5lcHR1bmUuYWkiLCJhcGlfa2V5IjoiNzU4NjYwZGYtMjRiMy00ODcxLWFjY2EtMGFhY2I3YzYxZTZjIn0=",
-  "neptune_project_name": "alexto/L2RPN",
+  "neptune_api_token": "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vdWkubmVwdHVuZS5haSIsImFwaV91cmwiOiJodHRwczovL3VpLm5lcHR1bmUuYWkiLCJhcGlfa2V5IjoiNDM1ZmEwZWUtYmQ0Ni00NmJiLWE1ZTUtMTgzMDJhNDU5MjIwIn0=",
+  "neptune_project_name": "l2rpn/l2rpn",
   "hyper_parameters": {
     "train_num_episodes": 20000,
     "min_steps_before_learning": 10000,
