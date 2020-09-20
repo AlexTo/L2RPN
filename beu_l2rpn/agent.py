@@ -41,13 +41,10 @@ class BeUAgent(SACDiscrete):
 
         while self.episode_number < self.hyper_parameters["train_num_episodes"]:
             self.reset_game()
-            if self.episode_number > self.resume_episode:
-                self.run_episode()
-                if self.episode_number % self.config["check_point_episodes"] == 0 \
-                        and self.global_step_number > self.hyper_parameters["min_steps_before_learning"]:
-                    self.save_model()
-            else:
-                self.episode_number += 1
+            self.run_episode()
+            if self.episode_number % self.config["check_point_episodes"] == 0 \
+                    and self.global_step_number > self.hyper_parameters["min_steps_before_learning"]:
+                self.save_model()
 
     def run_episode(self):
         print(f"Episode: {self.episode_number}")
@@ -133,9 +130,10 @@ class BeUAgent(SACDiscrete):
 
     def summarize_of_latest_evaluation_episode(self):
         self.expected_return += (self.total_episode_score_so_far - self.expected_return) / (
-                    self.episode_number / self.training_episodes_per_eval_episode)
+                self.episode_number / self.training_episodes_per_eval_episode)
         if self.config["neptune_enabled"]:
             self.neptune.log_metric('expected return', self.expected_return)
+            self.neptune.log_metric('episode reward', self.total_episode_score_so_far)
 
     def sample_experiences(self):
         # TODO: Override this to sample experiences from PER

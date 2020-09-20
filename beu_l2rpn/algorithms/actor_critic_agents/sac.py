@@ -174,7 +174,7 @@ class SAC(BaseAgent):
         policy_loss, log_pi = self.calculate_actor_loss(state_batch)
 
         if self.automatic_entropy_tuning:
-            alpha_loss = self.calculate_entropy_tuning_loss(log_pi)
+            alpha_loss = None #self.calculate_entropy_tuning_loss(log_pi)
         else:
             alpha_loss = None
 
