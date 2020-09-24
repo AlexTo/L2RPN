@@ -16,8 +16,6 @@ class SACDiscrete(BaseAgent):
     """The Soft Actor Critic for discrete actions. It inherits from SAC for continuous actions and only changes a few
     methods."""
 
-    agent_name = "SAC"
-
     def __init__(self, env, config):
         BaseAgent.__init__(self, env, config)
 
@@ -68,10 +66,6 @@ class SACDiscrete(BaseAgent):
 
         self.add_extra_noise = False
         self.do_evaluation_iterations = self.hyper_parameters["do_evaluation_iterations"]
-
-    def run_episode(self):
-        """Takes a step in the game. This method must be overriden by any agent"""
-        raise NotImplementedError("run_episode needs to be implemented by the agent")
 
     def filter_action(self, action):
         """Takes a step in the game. This method must be overriden by any agent"""
@@ -175,11 +169,13 @@ class SACDiscrete(BaseAgent):
 
         self.update_actor(policy_loss, alpha_loss)
 
-        if self.config["neptune_enabled"]:
-            self.neptune.log_metric('qf1_loss', qf1_loss.item())
-            self.neptune.log_metric('qf2_loss', qf2_loss.item())
-            self.neptune.log_metric('policy_loss', policy_loss.item())
-            self.neptune.log_metric('alpha_loss', alpha_loss.item())
+        self.log_metric('qf1_loss', qf1_loss.item())
+        self.log_metric('qf2_loss', qf2_loss.item())
+        self.log_metric('policy_loss', policy_loss.item())
+        self.log_metric('alpha_loss', alpha_loss.item())
+
+    def log_metric(self, metric_name, metric):
+        raise NotImplementedError("log_metric needs to be implemented by the agent")
 
     def sample_experiences(self):
         return self.memory.sample()

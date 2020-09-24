@@ -34,10 +34,6 @@ class BaseAgent(AgentWithConverter):
         self.global_step_number = 0
         self.turn_off_exploration = False
 
-    def run_episode(self):
-        """Takes a step in the game. This method must be overriden by any agent"""
-        raise NotImplementedError("run_episode needs to be implemented by the agent")
-
     def filter_action(self, action):
         """Takes a step in the game. This method must be overriden by any agent"""
         raise NotImplementedError("filter_action needs to be implemented by the agent")
@@ -89,9 +85,6 @@ class BaseAgent(AgentWithConverter):
 
     def random_action(self):
         return np.random.randint(0, self.action_size)
-
-    def update_learning_rate(self, starting_lr, optimizer):
-        pass
 
     def enough_experiences_to_learn(self):
         """Boolean indicated whether there are enough experiences in the memory buffer to learn from"""
@@ -159,9 +152,3 @@ class BaseAgent(AgentWithConverter):
         """Copies model parameters from from_model to to_model"""
         for to_model, from_model in zip(to_model.parameters(), from_model.parameters()):
             to_model.data.copy_(from_model.data.clone())
-
-    def save_model(self):
-        raise NotImplementedError("save_model needs to be implemented by the agent")
-
-    def load_model(self, path):
-        raise NotImplementedError("load_model needs to be implemented by the agent")

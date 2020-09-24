@@ -107,13 +107,11 @@ class BeUAgent(SACDiscrete):
             encoded_act = self.random_action()
             print("Picking random action ", encoded_act)
             # added by Sonvx
-            if self.config["neptune_enabled"]:
-                self.neptune.log_metric('random action', encoded_act)
+            self.log_metric('random action', encoded_act)
         else:
             encoded_act = self.actor_pick_action(state=state)
             # added by Sonvx
-            if self.config["neptune_enabled"]:
-                self.neptune.log_metric('sampled action', encoded_act)
+            self.log_metric('sampled action', encoded_act)
             print("Picking model sampled action ", encoded_act)
 
         action = self.convert_act(encoded_act)
@@ -173,11 +171,10 @@ class BeUAgent(SACDiscrete):
         else:
             self.completed_episodes += 1
 
-        if self.config["neptune_enabled"]:
-            self.neptune.log_metric('expected return', self.expected_return)
-            self.neptune.log_metric('episode reward', self.total_episode_score_so_far)
-            self.neptune.log_metric('successful episode completion rate',
-                                    self.completed_episodes / (self.completed_episodes + self.failed_episodes))
+        self.log_metric('expected return', self.expected_return)
+        self.log_metric('episode reward', self.total_episode_score_so_far)
+        self.log_metric('successful episode completion rate',
+                        self.completed_episodes / (self.completed_episodes + self.failed_episodes))
 
     def sample_experiences(self):
         # TODO: Override this to sample experiences from PER
@@ -198,7 +195,7 @@ class BeUAgent(SACDiscrete):
 
     def act(self, observation, reward, done=False):
         act = self.action_space({})
-        heuristic_act = self.pick_heuristic_action(observation)
+        heuristic_act = self.pick_heuristic_action()
         if heuristic_act is not None:
             act = heuristic_act
         return act
@@ -216,3 +213,10 @@ class BeUAgent(SACDiscrete):
 
     def to_encoded_act(self, act):
         return self.actions_to_ids[hashlib.sha256(act.to_vect().data.tobytes()).hexdigest()]
+
+    def my_act(self, transformed_observation, reward, done=False):
+        pass
+
+    def log_metric(self, metric_name, metric):
+        if self.config["neptune_enabled"]:
+            self.neptune.log_metric(metric_name, metric)
