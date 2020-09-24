@@ -3,7 +3,7 @@ import hashlib
 import numpy as np
 
 from beu_l2rpn.algorithms.actor_critic_agents.sac_discrete import SACDiscrete
-from beu_l2rpn.utilities.utility_functions import normalize
+from beu_l2rpn.utilities.utility_functions import get_scalers
 
 
 class BeUAgent(SACDiscrete):
@@ -20,11 +20,33 @@ class BeUAgent(SACDiscrete):
 
         self.actions_to_ids = {hashlib.sha256(a.to_vect().data.tobytes()).hexdigest(): idx for idx, a in
                                enumerate(self.action_space.all_actions)}
+
+        self.scalers = get_scalers()
+
         # TODO: Override the normal memory with Prioritised Replay Buffer
         # self.memory = ...
 
         # Stateful objects to keep track of various things about the current episode
         self.episode_broken_lines = {}
+
+        self.completed_episodes = 0
+        self.failed_episodes = 0
+
+    def filter_action(self, action):
+
+        action_impacts = action.impact_on_objects()
+
+        if not action_impacts['has_impact']:
+            return True
+
+        if action_impacts['switch_line']['changed'] or \
+                action_impacts['redispatch']['changed']:
+            return False
+
+        if action_impacts['force_line']['changed'] and action_impacts['force_line']['disconnections']['count'] > 0:
+            return False
+
+        return True
 
     def reset_game(self):
         """Resets the game information so we are ready to play a new episode"""
@@ -47,9 +69,14 @@ class BeUAgent(SACDiscrete):
                 self.save_model()
 
     def run_episode(self):
-        print(f"Episode: {self.episode_number}")
-        """Runs an episode on the game, saving the experience and running a learning step if appropriate"""
-        eval_ep = self.episode_number % self.training_episodes_per_eval_episode == 0 and self.do_evaluation_iterations
+
+        eval_ep = self.episode_number > 0 and \
+                  self.episode_number % self.training_episodes_per_eval_episode == 0 and \
+                  self.do_evaluation_iterations
+
+        print(f"Env {self.env.name} | Chronic {self.env.chronics_handler.get_name()} | Episode: {self.episode_number} "
+              f"| {'Train mode' if not eval_ep else 'Eval mode'}")
+
         self.episode_step_number_val = 0
 
         while not self.done:
@@ -67,7 +94,7 @@ class BeUAgent(SACDiscrete):
 
         self.episode_number += 1
         if eval_ep:
-            self.summarize_of_latest_evaluation_episode()
+            self.summarize_eval_episodes()
 
     def pick_action(self, eval_ep, state=None):
         if state is None:
@@ -92,20 +119,10 @@ class BeUAgent(SACDiscrete):
         action = self.convert_act(encoded_act)
         return action
 
-    def pick_heuristic_action(self, state=None):
+    def try_reconnect_power_line(self):
 
-        # This function defines some heuristic actions that we can try before seeking prediction from the neural net.
-
-        if state is None:
-            state = self.state
-
+        state = self.state
         act = None
-
-        # I. Reconnect powerline
-        #   1. We check if any power line has rho <= 0 (I think rho can't be negative but we check <= 0
-        #      just to make sure
-        #   2. If there is, increase the count by 1, otherwise if rho > 0, reset the count to 0.
-        #   3. If any line with rho <= 0 for 10 time steps, attempt to reconnect it if it doesn't cause game over
 
         zero_rhos = np.where(state.rho <= 0)[0]
 
@@ -134,12 +151,33 @@ class BeUAgent(SACDiscrete):
                 break
         return act
 
-    def summarize_of_latest_evaluation_episode(self):
+    def try_do_nothing(self):
+        pass
+
+    def pick_heuristic_action(self):
+
+        # This function defines some heuristic actions that we can try before seeking prediction from the neural net.
+
+        act = self.try_reconnect_power_line()
+
+        if act is not None:
+            return act
+
+        return act
+
+    def summarize_eval_episodes(self):
         self.expected_return += (self.total_episode_score_so_far - self.expected_return) / (
                 self.episode_number / self.training_episodes_per_eval_episode)
+        if len(self.info["exception"]) > 0:
+            self.failed_episodes += 1
+        else:
+            self.completed_episodes += 1
+
         if self.config["neptune_enabled"]:
             self.neptune.log_metric('expected return', self.expected_return)
             self.neptune.log_metric('episode reward', self.total_episode_score_so_far)
+            self.neptune.log_metric('successful episode completion rate',
+                                    self.completed_episodes / (self.completed_episodes + self.failed_episodes))
 
     def sample_experiences(self):
         # TODO: Override this to sample experiences from PER
@@ -171,15 +209,10 @@ class BeUAgent(SACDiscrete):
 
     def convert_obs(self, observation):
         # TODO: transform observation from the environment to graph features using the agent's GNN
+        for attr in self.hyper_parameters["selected_attributes"]:
+            setattr(observation, attr, getattr(observation, attr) / self.scalers[attr])
         vect = observation.to_vect()
-        return normalize(vect[self.obs_idx])
+        return vect[self.obs_idx]
 
     def to_encoded_act(self, act):
         return self.actions_to_ids[hashlib.sha256(act.to_vect().data.tobytes()).hexdigest()]
-
-    def evaluate(self):
-        pass
-
-    def filter_action(self, action):
-        # TODO: Filter action here, first try to follow KAIST method by using only topology actions
-        return True

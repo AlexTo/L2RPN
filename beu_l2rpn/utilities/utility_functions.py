@@ -51,17 +51,40 @@ def init_obs_extraction(observation_space, selected_attributes):
     return idx, size
 
 
-def normalize(state):
-    # normalize the state
-    for i, x in enumerate(state):
-        if x >= 1e5:
-            state[i] /= 1e4
-        elif 1e4 <= x < 1e5:
-            state[i] /= 1e3
-        elif 1e3 <= x < 1e4:
-            state[i] /= 1e2
-
-    return state
+def get_scalers():
+    # heuristic to scale observation attributes
+    return {
+        "year": 2000,
+        "month": 12,
+        "day": 30,
+        "day_of_week": 7,
+        "hour_of_day": 24,
+        "minute_of_hour": 60,
+        "prod_p": 100,
+        "prod_q": 100,
+        "prod_v": 100,
+        "load_p": 100,
+        "load_q": 100,
+        "load_v": 100,
+        "p_or": 100,
+        "q_or": 100,
+        "v_or": 100,
+        "a_or": 1000,
+        "p_ex": 100,
+        "q_ex": 100,
+        "v_ex": 100,
+        "a_ex": 1000,
+        "rho": 1,
+        "topo_vect": 1,
+        "line_status": 1,
+        "timestep_overflow": 1,
+        "time_before_cooldown_line": 10,
+        "time_before_cooldown_sub": 10,
+        "time_next_maintenance": 1,
+        "duration_next_maintenance": 1,
+        "actual_dispatch": 1,
+        "target_dispatch": 1
+    }
 
 
 class SharedAdam(torch.optim.Adam):
@@ -155,3 +178,9 @@ def backtrack_action_to_primitive_actions(action_tuple, global_action_id_to_prim
             print("Should have changed: ", new_action_tuple)
     new_action_tuple = tuple(new_action_tuple)
     return backtrack_action_to_primitive_actions(new_action_tuple)
+
+
+def shuffle(x):
+    lx = len(x)
+    s = np.random.choice(lx, size=lx, replace=False)
+    return x[s]
