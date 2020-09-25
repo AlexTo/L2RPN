@@ -8,17 +8,23 @@
   "neptune_api_token": "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vdWkubmVwdHVuZS5haSIsImFwaV91cmwiOiJodHRwczovL3VpLm5lcHR1bmUuYWkiLCJhcGlfa2V5IjoiNDM1ZmEwZWUtYmQ0Ni00NmJiLWE1ZTUtMTgzMDJhNDU5MjIwIn0=",
   "neptune_project_name": "l2rpn/l2rpn",
   "hyper_parameters": {
+    "filter_action": {
+      "redispatch": false,
+      "switch_line": false,
+      "force_line_disconnect": true,
+      "force_line_reconnect": false
+    },
     "train_num_episodes": 20000,
     "min_steps_before_learning": 10000,
     "num_frames": 4,
-    "batch_size": 512,
+    "batch_size": 64,
     "discount_rate": 0.99,
     "clip_rewards": false,
     "Actor": {
       "learning_rate": 0.0003,
       "linear_hidden_units": [
-        512,
-        512
+        768,
+        768
       ],
       "final_layer_activation": "Softmax",
       "batch_norm": false,
@@ -28,8 +34,8 @@
     "Critic": {
       "learning_rate": 0.0003,
       "linear_hidden_units": [
-        512,
-        512
+        768,
+        768
       ],
       "final_layer_activation": "None",
       "batch_norm": false,

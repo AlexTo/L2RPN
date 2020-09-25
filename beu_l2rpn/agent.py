@@ -39,12 +39,21 @@ class BeUAgent(SACDiscrete):
         if not action_impacts['has_impact']:
             return True
 
-        if action_impacts['switch_line']['changed'] or \
-                action_impacts['redispatch']['changed']:
-            return False
+        if self.hyper_parameters["filter_action"]["redispatch"]:
+            if action_impacts['redispatch']['changed']:
+                return False
 
-        if action_impacts['force_line']['changed'] and action_impacts['force_line']['disconnections']['count'] > 0:
-            return False
+        if self.hyper_parameters["filter_action"]["switch_line"]:
+            if action_impacts['switch_line']['changed']:
+                return False
+
+        if self.hyper_parameters["filter_action"]["force_line_disconnect"]:
+            if action_impacts['force_line']['changed'] and action_impacts['force_line']['disconnections']['count'] > 0:
+                return False
+
+        if self.hyper_parameters["filter_action"]["force_line_reconnect"]:
+            if action_impacts['force_line']['changed'] and action_impacts['force_line']['reconnections']['count'] > 0:
+                return False
 
         return True
 
