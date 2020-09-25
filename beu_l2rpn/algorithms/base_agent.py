@@ -13,18 +13,18 @@ from beu_l2rpn.nn_builder.pytorch.nn import NN
 class BaseAgent(AgentWithConverter):
 
     def __init__(self, env, config):
-        AgentWithConverter.__init__(self, env.action_space, action_space_converter=IdToAct)
 
+        AgentWithConverter.__init__(self, env.action_space, action_space_converter=IdToAct)
+        self.config = config
+        self.hyper_parameters = config["hyper_parameters"]
         self.action_space.filter_action(self.filter_action)
 
-        self.config = config
         self.env = env
         self.observation_space = env.observation_space
         self.set_random_seeds(config["seed"])
 
         self.action_size = int(self.action_space.size())
         self.state_size = int(env.observation_space.size())
-        self.hyper_parameters = config["hyper_parameters"]
 
         self.frames = []  # last n-1 frames, including current frame
         self.frames2 = []  # last n-2 frames, current frame and next frame
