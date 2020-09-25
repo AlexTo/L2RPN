@@ -88,6 +88,11 @@ class BeUAgent(SACDiscrete):
                     self.learn()
 
             if not eval_ep:
+                if self.done:
+                    if len(self.info["exception"]) > 0:
+                        self.reward = -50
+                    else:
+                        self.reward = 50
                 self.save_experience(experience=(self.state, self.action, self.reward, self.next_state, self.done))
             self.state = self.next_state
             self.global_step_number += 1
@@ -100,14 +105,16 @@ class BeUAgent(SACDiscrete):
         if state is None:
             state = self.state
 
-        if eval_ep:
-            encoded_act = self.actor_pick_action(state=state, eval=True)
-
-        elif self.global_step_number < self.hyper_parameters["min_steps_before_learning"]:
+        if self.global_step_number < self.hyper_parameters["min_steps_before_learning"]:
             encoded_act = self.random_action()
             print("Picking random action ", encoded_act)
             # added by Sonvx
             self.log_metric('random action', encoded_act)
+            return self.convert_act(encoded_act)
+
+        if eval_ep:
+            encoded_act = self.actor_pick_action(state=state, eval=True)
+
         else:
             encoded_act = self.actor_pick_action(state=state)
             # added by Sonvx
@@ -150,9 +157,9 @@ class BeUAgent(SACDiscrete):
         return act
 
     def try_do_nothing(self):
-        pass
+        do_nothing = self.action_space({})
 
-    def pick_heuristic_action(self):
+    def try_heuristic_action(self):
 
         # This function defines some heuristic actions that we can try before seeking prediction from the neural net.
 
@@ -170,11 +177,10 @@ class BeUAgent(SACDiscrete):
             self.failed_episodes += 1
         else:
             self.completed_episodes += 1
-
         self.log_metric('expected return', self.expected_return)
         self.log_metric('episode reward', self.total_episode_score_so_far)
-        self.log_metric('successful episode completion rate',
-                        self.completed_episodes / (self.completed_episodes + self.failed_episodes))
+        self.log_metric("number of steps completed", self.episode_step_number_val)
+        self.log_metric('number of episodes completed', self.completed_episodes)
 
     def sample_experiences(self):
         # TODO: Override this to sample experiences from PER

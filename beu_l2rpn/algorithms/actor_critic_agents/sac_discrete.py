@@ -61,10 +61,7 @@ class SACDiscrete(BaseAgent):
             self.alpha_optim = Adam([self.log_alpha], lr=self.hyper_parameters["Actor"]["learning_rate"], eps=1e-4)
         else:
             self.alpha = self.hyper_parameters["entropy_term_weight"]
-        assert not self.hyper_parameters[
-            "add_extra_noise"], "There is no add extra noise option for the discrete version of SAC at moment"
 
-        self.add_extra_noise = False
         self.do_evaluation_iterations = self.hyper_parameters["do_evaluation_iterations"]
 
     def filter_action(self, action):
@@ -78,7 +75,7 @@ class SACDiscrete(BaseAgent):
         """Given the state, produces an action, the probability of the action, the log probability of the action, and
         the argmax action"""
         action_probs = self.actor_local(state)
-        max_prob_action = torch.argmax(action_probs, dim=1)
+        max_prob_action = torch.argmax(action_probs, dim=-1)
         action_distribution = create_actor_distribution("DISCRETE", action_probs, self.action_size)
         action = action_distribution.sample().cpu()
         # Have to deal with situation of 0.0 probabilities because we can't do log 0
@@ -99,8 +96,8 @@ class SACDiscrete(BaseAgent):
             min_qf_next_target = action_probs * (
                     torch.min(qf1_next_target, qf2_next_target) - self.alpha * log_action_probs)
             min_qf_next_target = min_qf_next_target.sum(dim=1).unsqueeze(-1)
-            next_q_value = reward_batch + (1.0 - mask_batch) * self.hyper_parameters["discount_rate"] * (
-                min_qf_next_target)
+            next_q_value = reward_batch + (1.0 - mask_batch) * self.hyper_parameters[
+                "discount_rate"] * min_qf_next_target
 
         qf1 = self.critic_local(state_batch).gather(1, action_batch.long())
         qf2 = self.critic_local_2(state_batch).gather(1, action_batch.long())
@@ -119,11 +116,11 @@ class SACDiscrete(BaseAgent):
         log_action_probs = torch.sum(log_action_probs * action_probs, dim=1)
         return policy_loss, log_action_probs
 
-    def reset_game(self):
-        """Resets the game information so we are ready to play a new episode"""
-        BaseAgent.reset_game(self)
-        if self.add_extra_noise:
-            self.noise.reset()
+    def calc_entropy_tuning_loss(self, log_pi):
+        """Calculates the loss for the entropy temperature parameter. This is only relevant if self.automatic_entropy_tuning
+        is True."""
+        alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
+        return alpha_loss
 
     def pick_action(self, eval_ep, state=None):
         raise NotImplementedError("pick_action needs to be implemented by the agent")
@@ -179,12 +176,6 @@ class SACDiscrete(BaseAgent):
 
     def sample_experiences(self):
         return self.memory.sample()
-
-    def calc_entropy_tuning_loss(self, log_pi):
-        """Calculates the loss for the entropy temperature parameter. This is only relevant if self.automatic_entropy_tuning
-        is True."""
-        alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
-        return alpha_loss
 
     def update_critics(self, critic_loss_1, critic_loss_2):
         """Updates the parameters for the actor, both critics and (if specified) the temperature parameter"""

@@ -72,9 +72,6 @@ class BaseAgent(AgentWithConverter):
         self.episode_next_states = []
         self.episode_dones = []
 
-        if "exploration_strategy" in self.__dict__.keys():
-            self.exploration_strategy.reset()
-
     def conduct_action(self, act):
         """Conducts an action in the environment"""
         obs, self.reward, self.done, self.info = self.env.step(act)

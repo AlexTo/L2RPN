@@ -184,3 +184,7 @@ def shuffle(x):
     lx = len(x)
     s = np.random.choice(lx, size=lx, replace=False)
     return x[s]
+
+
+def has_overflow(obs):
+    return any(obs.rho > 1.02)
