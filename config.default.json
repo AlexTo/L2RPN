@@ -15,28 +15,11 @@
     "discount_rate": 0.99,
     "buffer_size": 1000000,
     "Actor": {
-      "learning_rate": 0.0003,
-      "linear_hidden_units": [
-        768,
-        768
-      ],
-      "final_layer_activation": "Softmax",
-      "batch_norm": false,
-      "gradient_clipping_norm": 5,
-      "initialiser": "Xavier"
+      "learning_rate": 0.0003
     },
     "Critic": {
       "learning_rate": 0.0003,
-      "linear_hidden_units": [
-        768,
-        768
-      ],
-      "final_layer_activation": "None",
-      "batch_norm": false,
-      "buffer_size": 1000000,
-      "tau": 0.005,
-      "gradient_clipping_norm": 5,
-      "initialiser": "Xavier"
+      "tau": 0.005
     },
     "update_every_n_steps": 1,
     "learning_updates_per_learning_session": 1,

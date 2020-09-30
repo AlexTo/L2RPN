@@ -202,7 +202,7 @@ class BeUAgent(AgentWithConverter):
 
     def run_episode(self):
 
-        eval_ep = self.episode_number > 0 and \
+        eval_ep = self.global_step_number > self.hyper_parameters["min_steps_before_learning"] and \
                   self.episode_number % self.training_episodes_per_eval_episode == 0 and \
                   self.do_evaluation_iterations
 
@@ -223,6 +223,11 @@ class BeUAgent(AgentWithConverter):
 
             self.stack_frame(self.state)
             self.stack_next_frame(self.next_state)
+            if self.done:
+                if len(self.info['exception']) > 0:
+                    self.reward = -1000
+                else:
+                    self.reward = 1000
 
             if not eval_ep and len(self.frames) == self.num_stack_frames:
                 self.save_exp(experience=(self.frames, self.action, self.reward, self.next_frames, self.done))
