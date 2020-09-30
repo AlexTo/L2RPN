@@ -13,3 +13,4 @@ ignore*
 
 config.json
 check_points
+*.npy

@@ -1,25 +1,36 @@
 {
-  "env": "l2rpn_case14_sandbox",
+  "env": "l2rpn_neurips_2020_track2_small",
   "seed": 2020,
   "use_gpu": true,
   "check_point_folder": "check_points",
+  "action_mappings_matrix": "./action_mappings.npy",
   "check_point_episodes": 100,
   "neptune_enabled": false,
   "neptune_api_token": "Your Neptune API token here if neptune enabled",
   "neptune_project_name": "Your Neptune API project here if neptune enabled",
   "hyper_parameters": {
-    "train_num_episodes": 20000,
-    "min_steps_before_learning": 10000,
+    "train_num_episodes": 50000,
+    "min_steps_before_learning": 150000,
     "num_stack_frames": 4,
     "batch_size": 64,
     "discount_rate": 0.99,
     "buffer_size": 1000000,
     "Actor": {
-      "learning_rate": 0.0003
+      "hidden_layers": [
+        2048,
+        4096
+      ],
+      "learning_rate": 0.0003,
+      "gradient_clipping_norm": 5
     },
     "Critic": {
+      "hidden_layers": [
+        2048,
+        4096
+      ],
       "learning_rate": 0.0003,
-      "tau": 0.005
+      "tau": 0.005,
+      "gradient_clipping_norm": 5
     },
     "update_every_n_steps": 1,
     "learning_updates_per_learning_session": 1,
@@ -27,6 +38,14 @@
     "entropy_term_weight": "None",
     "do_evaluation_iterations": true,
     "training_episodes_per_eval_episode": 10,
+    "selected_action_types": {
+      "switch_line": true,
+      "force_line_connect": true,
+      "force_line_disconnect": true,
+      "switch_bus": true,
+      "set_bus": true,
+      "redispatch": true
+    },
     "selected_attributes": {
       "year": true,
       "month": true,
