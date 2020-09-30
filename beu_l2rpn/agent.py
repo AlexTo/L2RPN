@@ -42,7 +42,7 @@ class BeUAgent(AgentWithConverter):
             self.action_mappings = self.get_action_mappings()
             np.save(config['action_mappings_matrix'], self.action_mappings)
 
-        self.action_mappings = torch.tensor(self.action_mappings).float().to(self.device)
+        self.action_mappings = torch.tensor(self.action_mappings, requires_grad=False).float().to(self.device)
 
         self.observation_space = env.observation_space
         self.set_random_seeds(config["seed"])
@@ -123,11 +123,6 @@ class BeUAgent(AgentWithConverter):
             self.alpha_optim = Adam([self.log_alpha], lr=self.hyper_parameters["Actor"]["learning_rate"], eps=1e-4)
         else:
             self.alpha = self.hyper_parameters["entropy_term_weight"]
-
-    def get_actions_tensor(self):
-        all_actions = self.all_actions
-        action_vectors = [act.to_vect() for act in all_actions]
-        return torch.tensor(action_vectors, requires_grad=False).float().to(self.device)
 
     @staticmethod
     def get_topo_pos_vect(env, obj_type):
