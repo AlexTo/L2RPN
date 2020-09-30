@@ -3,10 +3,12 @@ import json
 import grid2op
 from grid2op.Environment import MultiMixEnvironment
 from grid2op.Reward import CombinedScaledReward, CloseToOverflowReward, LinesReconnectedReward, \
-    L2RPNReward, RedispReward, GameplayReward
+    L2RPNReward
 
 from beu_l2rpn.agent import BeUAgent
-from beu_l2rpn.utilities.utility_functions import shuffle
+from beu_l2rpn.rewards.gameplay_reward import GameplayReward
+from beu_l2rpn.rewards.redisp_reward import RedispReward
+from beu_l2rpn.utils.util_functions import shuffle
 
 
 def train(env, conf):
@@ -30,7 +32,7 @@ if __name__ == "__main__":
     cr = environment.reward_helper.template_reward
     cr.addReward("redisp", RedispReward(), 1.0)
     cr.addReward("overflow", CloseToOverflowReward(), 1.0)
-    cr.addReward("game", GameplayReward(), 1.0)
+    cr.addReward("gameplay", GameplayReward(), 1.0)
     cr.addReward("recolines", LinesReconnectedReward(), 1.0)
     cr.addReward("l2rpn", L2RPNReward(), 2.0 / float(environment.n_line))
     # Initialize custom rewards

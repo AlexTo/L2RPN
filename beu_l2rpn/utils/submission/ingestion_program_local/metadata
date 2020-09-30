@@ -1,0 +1,1 @@
+command: python $ingestion_program/ingestion.py --input_path $input --output_path $output --program_path $ingestion_program --submission_path $submission_program --key_score grid_operation_cost --config_in $ingestion_program/config_local.json --gif_env x1.5 --gif_episode sep01 --gif_start 413 --gif_end 463 --nb_episode 12
