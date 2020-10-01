@@ -34,14 +34,7 @@ class BeUAgent(AgentWithConverter):
         # self.action_space.filter_action(self.filter_action)
         self.all_actions = np.array(self.action_space.all_actions)
 
-        if action_mappings_matrix is not None:
-            self.action_mappings = action_mappings_matrix
-        elif os.path.exists(config['action_mappings_matrix']):
-            with open(config['action_mappings_matrix'], 'rb') as f:
-                self.action_mappings = np.load(f)
-        else:
-            self.action_mappings = self.get_action_mappings()
-            np.save(config['action_mappings_matrix'], self.action_mappings)
+        self.load_action_mappings(action_mappings_matrix)
 
         self.action_mappings = torch.tensor(self.action_mappings, requires_grad=False).float().to(self.device)
 
@@ -60,15 +53,16 @@ class BeUAgent(AgentWithConverter):
 
         self.scalers = get_scalers()
 
-        self.memory = ReplayBuffer(self.hyper_parameters["buffer_size"], self.hyper_parameters["batch_size"],
-                                   self.config["seed"])
-
         self.episode_number = 0
         self.resume_episode = -1
         self.expected_return = 0
         self.completed_episodes = 0
         self.failed_episodes = 0
         self.global_step_number = 0
+
+        if training:
+            self.create_replay_buffer()
+
         self.do_evaluation_iterations = self.hyper_parameters["do_evaluation_iterations"]
         self.training_episodes_per_eval_episode = self.hyper_parameters["training_episodes_per_eval_episode"]
         self.num_stack_frames = self.hyper_parameters["num_stack_frames"]
@@ -90,8 +84,25 @@ class BeUAgent(AgentWithConverter):
             torch.cuda.manual_seed_all(random_seed)
             torch.cuda.manual_seed(random_seed)
 
-    def create_networks(self):
+    def load_action_mappings(self, action_mappings_matrix):
+        config = self.config
+        if action_mappings_matrix is not None:
+            self.action_mappings = action_mappings_matrix
+        elif os.path.exists(config['action_mappings_matrix']):
+            with open(config['action_mappings_matrix'], 'rb') as f:
+                self.action_mappings = np.load(f)
+        else:
+            self.action_mappings = self.get_action_mappings()
+            np.save(config['action_mappings_matrix'], self.action_mappings)
 
+    def create_replay_buffer(self):
+        self.memory = ReplayBuffer(self.hyper_parameters["buffer_size"], self.hyper_parameters["batch_size"],
+                                   self.config["seed"])
+        if os.path.exists(self.config["replay_buffer_file"]):
+            self.memory.load(self.config["replay_buffer_file"])
+        self.global_step_number = len(self.memory)
+
+    def create_networks(self):
         self.critic_1 = nn.DataParallel(Critic(input_dim=self.state_size * self.num_stack_frames,
                                                action_mappings=self.action_mappings,
                                                config=self.hyper_parameters["Critic"])).to(self.device)
@@ -285,6 +296,10 @@ class BeUAgent(AgentWithConverter):
             if self.episode_number % self.config["check_point_episodes"] == 0 \
                     and self.global_step_number > self.hyper_parameters["min_steps_before_learning"]:
                 self.save_model()
+
+            if self.global_step_number > self.hyper_parameters["min_steps_before_learning"] and not os.path.exists(
+                    self.config["replay_buffer_file"]):
+                self.memory.save(self.config["replay_buffer_file"])
 
     def run_episode(self):
 

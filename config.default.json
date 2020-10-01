@@ -3,7 +3,7 @@
   "seed": 2020,
   "use_gpu": true,
   "save_replay_buffer": true,
-  "replay_buffer": "./replay_buffer.pickle",
+  "replay_buffer_file": "./replay_buffer.pickle",
   "check_point_folder": "check_points",
   "action_mappings_matrix": "./action_mappings.npy",
   "check_point_episodes": 100,

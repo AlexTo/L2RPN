@@ -9,6 +9,6 @@ def make_agent(env, submission_dir):
     model_path = os.path.join(submission_dir, "saved_model")
     with open(os.path.join(model_path, 'config.json')) as json_file:
         config = json.load(json_file)
-    agent = BeUAgent(env, config)
+    agent = BeUAgent(env, config, training=False)
     agent.load_model(os.path.join(model_path, "model.pth"))
     return agent

@@ -1,7 +1,10 @@
+import pickle
 from collections import namedtuple, deque
 import random
 import torch
 import numpy as np
+
+Experience = namedtuple("Experience", field_names=["state", "action", "reward", "next_state", "done"])
 
 
 class ReplayBuffer(object):
@@ -11,7 +14,6 @@ class ReplayBuffer(object):
 
         self.memory = deque(maxlen=buffer_size)
         self.batch_size = batch_size
-        self.experience = namedtuple("Experience", field_names=["state", "action", "reward", "next_state", "done"])
         self.seed = random.seed(seed)
         if device:
             self.device = torch.device(device)
@@ -22,12 +24,12 @@ class ReplayBuffer(object):
         """Adds experience(s) into the replay buffer"""
         if type(dones) == list:
             assert type(dones[0]) != list, "A done shouldn't be a list"
-            experiences = [self.experience(state, action, reward, next_state, done)
+            experiences = [Experience(state, action, reward, next_state, done)
                            for state, action, reward, next_state, done in
                            zip(states, actions, rewards, next_states, dones)]
             self.memory.extend(experiences)
         else:
-            experience = self.experience(states, actions, rewards, next_states, dones)
+            experience = Experience(states, actions, rewards, next_states, dones)
             self.memory.append(experience)
 
     def sample(self, num_experiences=None, separate_out_data_types=True):
@@ -59,3 +61,11 @@ class ReplayBuffer(object):
 
     def __len__(self):
         return len(self.memory)
+
+    def save(self, path):
+        with open(path, "wb") as f:
+            pickle.dump(self.memory, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    def load(self, path):
+        with open(path, "rb") as f:
+            self.memory = pickle.load(f)

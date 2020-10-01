@@ -3,6 +3,7 @@
   "seed": 2020,
   "use_gpu": true,
   "check_point_folder": "check_points",
+  "replay_buffer_file": "./replay_buffer.pickle",
   "action_mappings_matrix": "./action_mappings.npy",
   "check_point_episodes": 100,
   "neptune_enabled": true,
@@ -32,7 +33,7 @@
       "tau": 0.005,
       "gradient_clipping_norm": 5
     },
-     "danger_threshold": {
+    "danger_threshold": {
       "rho": 0.85
     },
     "update_every_n_steps": 1,
