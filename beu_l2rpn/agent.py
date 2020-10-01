@@ -230,7 +230,6 @@ class BeUAgent(AgentWithConverter):
         return vect[self.obs_idx]
 
     def reset_game(self):
-        self.env.seed(self.config["seed"])
         if isinstance(self.env, MultiMixEnvironment):
             self.state = self.env.reset(random=True)
         else:
