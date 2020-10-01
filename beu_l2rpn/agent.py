@@ -13,15 +13,13 @@ from torch.optim import Adam
 
 from beu_l2rpn.actor import Actor
 from beu_l2rpn.critic import Critic
-from beu_l2rpn.utils.data_structures.replay_buffer import ReplayBuffer
-from beu_l2rpn.utils.util_functions import get_scalers, create_actor_distribution
+from beu_l2rpn.data_structures import ReplayBuffer
+from beu_l2rpn.utils import get_scalers, create_actor_distribution
 
 
 class BeUAgent(AgentWithConverter):
 
-    def __init__(self,
-                 env,
-                 config):
+    def __init__(self, env, config, training=True, action_mappings_matrix=None):
 
         self.env = env
         self.config = config
@@ -33,9 +31,11 @@ class BeUAgent(AgentWithConverter):
         AgentWithConverter.__init__(self, env.action_space, action_space_converter=IdToAct)
 
         # self.action_space.filter_action(self.filter_action)
-
         self.all_actions = np.array(self.action_space.all_actions)
-        if os.path.exists(config['action_mappings_matrix']):
+
+        if action_mappings_matrix is not None:
+            self.action_mappings = action_mappings_matrix
+        elif os.path.exists(config['action_mappings_matrix']):
             with open(config['action_mappings_matrix'], 'rb') as f:
                 self.action_mappings = np.load(f)
         else:
@@ -139,52 +139,58 @@ class BeUAgent(AgentWithConverter):
 
     def get_action_mappings(self):
         env = self.env
+        selected_action_types = self.hyper_parameters["selected_action_types"]
         all_actions = self.all_actions
         action_tensors = []
         for act in all_actions:
             impacts = act.impact_on_objects()
 
             switch_line_tensor = np.zeros(env.n_line)
-            switch_line_tensor[impacts['switch_line']['powerlines']] = 1
+            if selected_action_types["switch_line"]:
+                switch_line_tensor[impacts['switch_line']['powerlines']] = 1
 
             force_line_disconnect_vector = np.zeros(env.n_line)
-            force_line_disconnect_vector[impacts['force_line']['disconnections']['powerlines']] = 1
+            if selected_action_types["force_line_disconnect"]:
+                force_line_disconnect_vector[impacts['force_line']['disconnections']['powerlines']] = 1
 
             force_line_reconnect_vector = np.zeros(env.n_line)
-            force_line_reconnect_vector[impacts['force_line']['reconnections']['powerlines']] = 1
+            if selected_action_types["force_line_reconnect"]:
+                force_line_reconnect_vector[impacts['force_line']['reconnections']['powerlines']] = 1
 
             set_bus_1_vector = np.zeros(env.dim_topo)
             set_bus_2_vector = np.zeros(env.dim_topo)
 
-            for bus_assign in impacts['topology']['assigned_bus']:
-                if bus_assign['bus'] == 1:
-                    bus_vector = set_bus_1_vector
-                else:
-                    bus_vector = set_bus_2_vector
+            if selected_action_types["set_bus"]:
+                for bus_assign in impacts['topology']['assigned_bus']:
+                    if bus_assign['bus'] == 1:
+                        bus_vector = set_bus_1_vector
+                    else:
+                        bus_vector = set_bus_2_vector
 
-                obj_id = bus_assign['object_id']
-                obj_type = bus_assign['object_type']
+                    obj_id = bus_assign['object_id']
+                    obj_type = bus_assign['object_type']
 
-                pos_vect = self.get_topo_pos_vect(env, obj_type)
+                    pos_vect = self.get_topo_pos_vect(env, obj_type)
 
-                bus_vector[pos_vect[obj_id]] = 1
+                    bus_vector[pos_vect[obj_id]] = 1
 
             switch_bus_vector = np.zeros(env.dim_topo)
-
-            for bus_switch in impacts['topology']['bus_switch']:
-                obj_id = bus_switch['object_id']
-                obj_type = bus_switch['object_type']
-                pos_vect = self.get_topo_pos_vect(env, obj_type)
-                switch_bus_vector[pos_vect[obj_id]] = 1
+            if selected_action_types["switch_bus"]:
+                for bus_switch in impacts['topology']['bus_switch']:
+                    obj_id = bus_switch['object_id']
+                    obj_type = bus_switch['object_type']
+                    pos_vect = self.get_topo_pos_vect(env, obj_type)
+                    switch_bus_vector[pos_vect[obj_id]] = 1
 
             redisp_vector = np.zeros(env.n_gen * 8)
-            for redisp in impacts['redispatch']['generators']:
-                obj_id = redisp['gen_id']
-                dispatch_levels = np.linspace(-env.gen_max_ramp_down[obj_id], env.gen_max_ramp_up[obj_id], 9)
-                level = np.argwhere(dispatch_levels == redisp['amount'])
-                if level > 4:
-                    level = level - 1
-                redisp_vector[obj_id * 8 + level] = 1
+            if selected_action_types["redispatch"]:
+                for redisp in impacts['redispatch']['generators']:
+                    obj_id = redisp['gen_id']
+                    dispatch_levels = np.linspace(-env.gen_max_ramp_down[obj_id], env.gen_max_ramp_up[obj_id], 9)
+                    level = np.argwhere(dispatch_levels == redisp['amount'])
+                    if level > 4:
+                        level = level - 1
+                    redisp_vector[obj_id * 8 + level] = 1
 
             action_tensors.append(np.concatenate(
                 [switch_line_tensor, force_line_reconnect_vector, force_line_disconnect_vector, set_bus_1_vector,
@@ -335,9 +341,10 @@ class BeUAgent(AgentWithConverter):
         return encoded_act
 
     def act(self, state, reward, done=False):
-
-        if not any(state.rho > 0.85):
+        hyper_params = self.hyper_parameters
+        if not any(state.rho > int(hyper_params["danger_threshold"]["rho"])):
             return 0
+
 
         frames = self.frames
 

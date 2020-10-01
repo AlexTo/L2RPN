@@ -1,24 +1,6 @@
-from abc import ABCMeta
-
 import numpy as np
 import torch
 from torch.distributions import Categorical, normal
-
-
-def abstract(cls):
-    return ABCMeta(cls.__name__, cls.__bases__, dict(cls.__dict__))
-
-
-def save_score_results(file_path, results):
-    """Saves results as a numpy file at given path"""
-    np.save(file_path, results)
-
-
-def normalise_rewards(rewards):
-    """Normalises rewards to mean 0 and standard deviation 1"""
-    mean_reward = np.mean(rewards)
-    std_reward = np.std(rewards)
-    return (rewards - mean_reward) / (std_reward + 1e-8)  # 1e-8 added for stability
 
 
 def create_actor_distribution(action_types, actor_output, action_size):

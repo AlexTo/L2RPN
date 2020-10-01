@@ -11,9 +11,9 @@ from zipfile import ZipFile
 
 import pandas as pd
 
-from beu_l2rpn.utilities.submission import ingestion_program_cmd, \
+from beu_l2rpn.submission import ingestion_program_cmd, \
     scoring_program_cmd
-from beu_l2rpn.utilities.submission.zip_for_codalab import zip_for_codalab
+from beu_l2rpn.submission.zip_for_codalab import zip_for_codalab
 
 DEFAULT_MODEL_DIR = 'example_submission/submission'
 

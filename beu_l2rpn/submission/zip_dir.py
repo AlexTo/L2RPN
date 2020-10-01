@@ -8,4 +8,4 @@ def zipdir(path_, ziph):
             if os.path.splitext(file_)[1] == ".pyc":
                 continue
             ziph.write(os.path.join(root, file_),
-                       arcname=os.path.relpath(os.path.join(root, file_), os.path.join(path_, '..')))
+                       arcname=os.path.relpath(os.path.join(root, file_), os.path.join(path_, '../utils')))

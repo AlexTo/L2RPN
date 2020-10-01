@@ -1,6 +1,6 @@
 import argparse
 
-from beu_l2rpn.utilities.submission.submission_utils import prepare_submission, test_submission
+from beu_l2rpn.submission.submission_utils import prepare_submission, test_submission
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Prepare submission")

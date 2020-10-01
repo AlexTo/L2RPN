@@ -8,7 +8,7 @@ from grid2op.Reward import CombinedScaledReward, CloseToOverflowReward, LinesRec
 from beu_l2rpn.agent import BeUAgent
 from beu_l2rpn.rewards.gameplay_reward import GameplayReward
 from beu_l2rpn.rewards.redisp_reward import RedispReward
-from beu_l2rpn.utils.util_functions import shuffle
+from beu_l2rpn.utils import shuffle
 
 
 def train(env, conf):

@@ -2,19 +2,17 @@
   "env": "l2rpn_neurips_2020_track2_small",
   "seed": 2020,
   "use_gpu": true,
-  "save_replay_buffer": true,
-  "replay_buffer": "./replay_buffer.pickle",
   "check_point_folder": "check_points",
   "action_mappings_matrix": "./action_mappings.npy",
   "check_point_episodes": 100,
-  "neptune_enabled": false,
-  "neptune_api_token": "Your Neptune API token here if neptune enabled",
-  "neptune_project_name": "Your Neptune API project here if neptune enabled",
+  "neptune_enabled": true,
+  "neptune_api_token": "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vdWkubmVwdHVuZS5haSIsImFwaV91cmwiOiJodHRwczovL3VpLm5lcHR1bmUuYWkiLCJhcGlfa2V5IjoiNDM1ZmEwZWUtYmQ0Ni00NmJiLWE1ZTUtMTgzMDJhNDU5MjIwIn0=",
+  "neptune_project_name": "l2rpn/l2rpn",
   "hyper_parameters": {
     "train_num_episodes": 50000,
-    "min_steps_before_learning": 150000,
+    "min_steps_before_learning": 100000,
     "num_stack_frames": 4,
-    "batch_size": 64,
+    "batch_size": 256,
     "discount_rate": 0.99,
     "buffer_size": 1000000,
     "Actor": {
@@ -34,9 +32,6 @@
       "tau": 0.005,
       "gradient_clipping_norm": 5
     },
-     "danger_threshold": {
-      "rho": 0.85
-    },
     "update_every_n_steps": 1,
     "learning_updates_per_learning_session": 1,
     "automatically_tune_entropy_hyper_parameter": true,
@@ -52,12 +47,12 @@
       "redispatch": true
     },
     "selected_attributes": {
-      "year": true,
-      "month": true,
-      "day": true,
-      "day_of_week": true,
-      "hour_of_day": true,
-      "minute_of_hour": true,
+      "year": false,
+      "month": false,
+      "day": false,
+      "day_of_week": false,
+      "hour_of_day": false,
+      "minute_of_hour": false,
       "prod_p": true,
       "prod_q": true,
       "prod_v": true,
@@ -78,8 +73,8 @@
       "timestep_overflow": true,
       "time_before_cooldown_line": true,
       "time_before_cooldown_sub": true,
-      "time_next_maintenance": true,
-      "duration_next_maintenance": true,
+      "time_next_maintenance": false,
+      "duration_next_maintenance": false,
       "actual_dispatch": true,
       "target_dispatch": true
     }

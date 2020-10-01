@@ -1,5 +1,5 @@
 import numpy as np
-from beu_l2rpn.utilities.data_structures.node import Node
+from beu_l2rpn.data_structures.node import Node
 
 
 class Deque(object):
