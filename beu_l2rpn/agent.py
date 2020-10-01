@@ -5,6 +5,7 @@ from datetime import datetime
 
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from grid2op.Agent import AgentWithConverter
 from grid2op.Converter import IdToAct
@@ -91,20 +92,25 @@ class BeUAgent(AgentWithConverter):
 
     def create_networks(self):
 
-        self.critic_1 = Critic(input_dim=self.state_size * self.num_stack_frames,
-                               action_mappings=self.action_mappings, config=self.hyper_parameters["Critic"]) \
-            .to(self.device)
-        self.critic_2 = Critic(input_dim=self.state_size * self.num_stack_frames,
-                               action_mappings=self.action_mappings, config=self.hyper_parameters["Critic"]) \
-            .to(self.device)
-        self.critic_target_1 = Critic(input_dim=self.state_size * self.num_stack_frames,
-                                      action_mappings=self.action_mappings, config=self.hyper_parameters["Critic"]) \
-            .to(self.device)
-        self.critic_target_2 = Critic(input_dim=self.state_size * self.num_stack_frames,
-                                      action_mappings=self.action_mappings, config=self.hyper_parameters["Critic"]) \
-            .to(self.device)
-        self.actor = Actor(input_dim=self.state_size * self.num_stack_frames, action_mappings=self.action_mappings,
-                           config=self.hyper_parameters["Actor"]).to(self.device)
+        self.critic_1 = nn.DataParallel(Critic(input_dim=self.state_size * self.num_stack_frames,
+                                               action_mappings=self.action_mappings,
+                                               config=self.hyper_parameters["Critic"])).to(self.device)
+
+        self.critic_2 = nn.DataParallel(Critic(input_dim=self.state_size * self.num_stack_frames,
+                                               action_mappings=self.action_mappings,
+                                               config=self.hyper_parameters["Critic"])).to(self.device)
+
+        self.critic_target_1 = nn.DataParallel(Critic(input_dim=self.state_size * self.num_stack_frames,
+                                                      action_mappings=self.action_mappings,
+                                                      config=self.hyper_parameters["Critic"])).to(self.device)
+
+        self.critic_target_2 = nn.DataParallel(Critic(input_dim=self.state_size * self.num_stack_frames,
+                                                      action_mappings=self.action_mappings,
+                                                      config=self.hyper_parameters["Critic"])).to(self.device)
+
+        self.actor = nn.DataParallel(Actor(input_dim=self.state_size * self.num_stack_frames,
+                                           action_mappings=self.action_mappings,
+                                           config=self.hyper_parameters["Actor"])).to(self.device)
 
         self.critic_optimizer = torch.optim.Adam(self.critic_1.parameters(),
                                                  lr=self.hyper_parameters["Critic"]["learning_rate"], eps=1e-4)
