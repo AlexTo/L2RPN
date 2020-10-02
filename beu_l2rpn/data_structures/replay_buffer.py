@@ -1,6 +1,8 @@
 import pickle
 from collections import namedtuple, deque
 import random
+
+import joblib
 import torch
 import numpy as np
 
@@ -63,9 +65,7 @@ class ReplayBuffer(object):
         return len(self.memory)
 
     def save(self, path):
-        with open(path, "wb") as f:
-            pickle.dump(self.memory, f, protocol=pickle.HIGHEST_PROTOCOL)
+        joblib.dump(self.memory, path, compress=True, protocol=pickle.HIGHEST_PROTOCOL)
 
     def load(self, path):
-        with open(path, "rb") as f:
-            self.memory = pickle.load(f)
+        self.memory = joblib.load(path)

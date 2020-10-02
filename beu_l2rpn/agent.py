@@ -321,6 +321,7 @@ class BeUAgent(AgentWithConverter):
                 self.action = self.act_train()
 
             self.conduct_action(self.action)
+
             if self.time_to_learn():
                 for _ in range(self.hyper_parameters["learning_updates_per_learning_session"]):
                     self.learn()
