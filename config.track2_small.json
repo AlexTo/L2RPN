@@ -3,8 +3,8 @@
   "seed": 2020,
   "use_gpu": true,
   "check_point_folder": "check_points",
-  "replay_buffer_file": "./replay_buffer.pickle",
-  "action_mappings_matrix": "./action_mappings.npy",
+  "replay_buffer_file": "./replay_buffer_track2_small.gz",
+  "action_mappings_matrix": "./action_mappings_track2_small.npy",
   "check_point_episodes": 100,
   "neptune_enabled": true,
   "neptune_api_token": "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vdWkubmVwdHVuZS5haSIsImFwaV91cmwiOiJodHRwczovL3VpLm5lcHR1bmUuYWkiLCJhcGlfa2V5IjoiNDM1ZmEwZWUtYmQ0Ni00NmJiLWE1ZTUtMTgzMDJhNDU5MjIwIn0=",
@@ -18,16 +18,18 @@
     "buffer_size": 1000000,
     "Actor": {
       "hidden_layers": [
-        2048,
-        4096
+        896,
+        896,
+        896
       ],
       "learning_rate": 0.0003,
       "gradient_clipping_norm": 5
     },
     "Critic": {
       "hidden_layers": [
-        2048,
-        4096
+        896,
+        896,
+        896
       ],
       "learning_rate": 0.0003,
       "tau": 0.005,
