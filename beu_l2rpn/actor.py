@@ -3,6 +3,7 @@ from abc import ABC
 from collections import OrderedDict
 
 from torch import nn
+import torch.nn.functional as F
 
 
 class Actor(nn.Module, ABC):
@@ -31,5 +32,5 @@ class Actor(nn.Module, ABC):
     def forward(self, state_batch):
         out = self.fc_layers(state_batch)
         out = out.matmul(self.action_mappings.T)
-        out = torch.softmax(out, dim=-1)
+        out = F.gumbel_softmax(out, dim=-1)
         return out
