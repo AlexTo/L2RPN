@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from grid2op.Environment import MultiMixEnvironment
 
-from beu_l2rpn.utils import v_wrap, set_init, push_and_pull, record, convert_obs, create_env
+from beu_l2rpn.utils import v_wrap, set_init, push_and_pull, record, convert_obs
 
 
 class Net(nn.Module, ABC):
@@ -57,7 +57,7 @@ class Net(nn.Module, ABC):
 
 class Worker(mp.Process):
     def __init__(self, global_net, opt, global_ep, global_ep_r, res_queue, worker_id, nb_episodes, env, state_size,
-                 action_size, update_global_iter, gamma, all_actions, obs_idx, selected_attributes, seed,
+                 action_size, update_global_iter, gamma, all_actions, obs_idx, selected_attributes,
                  feature_scalers):
         super(Worker, self).__init__()
         self.worker_id = worker_id
@@ -65,7 +65,7 @@ class Worker(mp.Process):
         self.g_ep, self.g_ep_r, self.res_queue = global_ep, global_ep_r, res_queue
         self.global_net, self.opt = global_net, opt
         self.local_net = Net(state_size, action_size)  # local network
-        self.env = create_env(env, seed)
+        self.env = env
         self.nb_episodes = nb_episodes
         self.update_global_iter = update_global_iter
         self.gamma = gamma

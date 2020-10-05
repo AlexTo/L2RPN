@@ -76,23 +76,6 @@ def shuffle(x):
     return x[s]
 
 
-def create_env(env, seed):
-    # environment = grid2op.make(env, reward_class=CombinedScaledReward)
-    # cr = environment.reward_helper.template_reward
-    # cr.addReward("redisp", RedispReward(), 1.0)
-    # cr.addReward("overflow", CloseToOverflowReward(), 1.0)
-    # cr.addReward("gameplay", GameplayReward(), 1.0)
-    # cr.addReward("recolines", LinesReconnectedReward(), 1.0)
-    # cr.addReward("l2rpn", L2RPNReward(), 2.0 / float(environment.n_line))
-    # # Initialize custom rewards
-    # cr.set_range(-1.0, 1.0)
-    # cr.initialize(environment)
-    environment = grid2op.make(env)
-    environment.seed(seed)
-    shuffle_env_chronics(environment)
-    return environment
-
-
 def shuffle_env_chronics(environment):
     if isinstance(environment, MultiMixEnvironment):
         for mix in environment:
@@ -216,3 +199,14 @@ def set_random_seeds(seed):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
         torch.cuda.manual_seed(seed)
+
+
+def load_action_mappings(env, config, all_actions):
+    hyper_parameters = config["hyper_parameters"]
+    if os.path.exists(config['action_mappings_matrix']):
+        with open(config['action_mappings_matrix'], 'rb') as f:
+            return np.load(f)
+    else:
+        action_mappings = get_action_mappings(env, all_actions, hyper_parameters["selected_action_types"])
+        np.save(config['action_mappings_matrix'], action_mappings)
+        return action_mappings
