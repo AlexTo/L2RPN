@@ -1,7 +1,5 @@
 import os
-import random
 
-import grid2op
 import numpy as np
 import torch
 import torch.multiprocessing as mp
@@ -60,10 +58,6 @@ class BeUAgent(AgentWithConverter):
         return 0
 
     def train(self):
-        # To use CUDA, we need to set start method to "spawn" but if we uncomment the following 2 lines, we got an error
-        # if self.config["use_gpu"] and torch.cuda.is_available():
-        #    mp.set_start_method('spawn')
-
         global_net = Net(self.state_size, self.action_size)
         global_net.share_memory()
         opt = SharedAdam(global_net.parameters(), lr=self.hyper_parameters["learning_rate"])  # global optimizer
