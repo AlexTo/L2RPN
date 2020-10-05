@@ -1,42 +1,15 @@
 import json
 
-import grid2op
-from grid2op.Environment import MultiMixEnvironment
-from grid2op.Reward import CombinedScaledReward, CloseToOverflowReward, LinesReconnectedReward, \
-    L2RPNReward
-
 from beu_l2rpn.agent import BeUAgent
-from beu_l2rpn.rewards.gameplay_reward import GameplayReward
-from beu_l2rpn.rewards.redisp_reward import RedispReward
-from beu_l2rpn.utils import shuffle
 
 
-def train(env, conf):
-    agent = BeUAgent(env, conf)
+def train():
+    with open('config.json') as json_file:
+        config = json.load(json_file)
+
+    agent = BeUAgent(config=config)
     agent.train()
 
 
 if __name__ == "__main__":
-    with open('config.json') as json_file:
-        config = json.load(json_file)
-
-    environment = grid2op.make(config["env"], reward_class=CombinedScaledReward)
-
-    if isinstance(environment, MultiMixEnvironment):
-        for mix in environment:
-            mix.chronics_handler.shuffle(shuffler=shuffle)
-    else:
-        environment.chronics_handler.shuffle(shuffler=shuffle)
-
-    # Register custom reward for training
-    cr = environment.reward_helper.template_reward
-    cr.addReward("redisp", RedispReward(), 1.0)
-    cr.addReward("overflow", CloseToOverflowReward(), 1.0)
-    cr.addReward("gameplay", GameplayReward(), 1.0)
-    cr.addReward("recolines", LinesReconnectedReward(), 1.0)
-    cr.addReward("l2rpn", L2RPNReward(), 2.0 / float(environment.n_line))
-    # Initialize custom rewards
-    cr.set_range(-1.0, 1.0)
-    cr.initialize(environment)
-
-    train(environment, config)
+    train()
