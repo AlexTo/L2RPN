@@ -60,6 +60,7 @@ class BeUAgent(AgentWithConverter):
         return 0
 
     def train(self):
+        # To use CUDA, we need to set start method to "spawn" but if we uncomment the following 2 lines, we got an error
         # if self.config["use_gpu"] and torch.cuda.is_available():
         #    mp.set_start_method('spawn')
 
