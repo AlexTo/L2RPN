@@ -118,7 +118,7 @@ def train(rank, config, shared_model, optimizer, obs_idx, state_size, global_eps
             logging.info(f"Agent_{rank}_value_loss|||{value_loss.item()}")
 
         agent.model.zero_grad()
-        (policy_loss + 0.5 * value_loss).backward()
+        (policy_loss + 0.5 * value_loss).mean().backward()
         ensure_shared_grads(agent.model, shared_model, gpu=gpu_id >= 0)
         optimizer.step()
         agent.clear_actions()

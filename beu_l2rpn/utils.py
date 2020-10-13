@@ -97,3 +97,83 @@ def convert_obs(observation, obs_idx, selected_attributes, feature_scalers):
         setattr(obs, attr, getattr(obs, attr) / feature_scalers[attr])
     vect = obs.to_vect()
     return vect[obs_idx]
+
+
+def get_topo_pos_vect(env, obj_type):
+    pos_vect = env.line_or_pos_topo_vect
+    if obj_type == 'line (origin)':
+        pos_vect = env.line_or_pos_topo_vect
+    elif obj_type == 'line (extremity)':
+        pos_vect = env.line_ex_pos_topo_vect
+    elif obj_type == 'load':
+        pos_vect = env.load_pos_topo_vect
+    elif obj_type == 'generator':
+        pos_vect = env.gen_pos_topo_vect
+    return pos_vect
+
+
+def create_action_mappings(env, all_actions, selected_action_types):
+    action_tensors = []
+    i = 0
+    for act in all_actions:
+        impacts = act.impact_on_objects()
+
+        switch_line_tensor = np.zeros(env.n_line)
+        if selected_action_types["switch_line"]:
+            switch_line_tensor[impacts['switch_line']['powerlines']] = 1
+
+        force_line_disconnect_vector = np.zeros(env.n_line)
+        if selected_action_types["force_line_disconnect"]:
+            force_line_disconnect_vector[impacts['force_line']['disconnections']['powerlines']] = 1
+
+        force_line_reconnect_vector = np.zeros(env.n_line)
+        if selected_action_types["force_line_reconnect"]:
+            force_line_reconnect_vector[impacts['force_line']['reconnections']['powerlines']] = 1
+
+        set_bus_1_vector = np.zeros(env.dim_topo)
+        set_bus_2_vector = np.zeros(env.dim_topo)
+
+        if selected_action_types["set_bus"]:
+            for bus_assign in impacts['topology']['assigned_bus']:
+                if bus_assign['bus'] == 1:
+                    bus_vector = set_bus_1_vector
+                else:
+                    bus_vector = set_bus_2_vector
+
+                obj_id = bus_assign['object_id']
+                obj_type = bus_assign['object_type']
+
+                pos_vect = get_topo_pos_vect(env, obj_type)
+
+                bus_vector[pos_vect[obj_id]] = 1
+
+        switch_bus_vector = np.zeros(env.dim_topo)
+        if selected_action_types["switch_bus"]:
+            for bus_switch in impacts['topology']['bus_switch']:
+                obj_id = bus_switch['object_id']
+                obj_type = bus_switch['object_type']
+                pos_vect = get_topo_pos_vect(env, obj_type)
+                switch_bus_vector[pos_vect[obj_id]] = 1
+
+        redisp_vector = np.zeros(env.n_gen * 8)
+        if selected_action_types["redispatch"]:
+            for redisp in impacts['redispatch']['generators']:
+                obj_id = redisp['gen_id']
+                dispatch_levels = np.linspace(-env.gen_max_ramp_down[obj_id], env.gen_max_ramp_up[obj_id], 9)
+                level = np.argwhere(dispatch_levels == redisp['amount'])
+                if level > 4:
+                    level = level - 1
+                redisp_vector[obj_id * 8 + level] = 1
+
+        action_tensor = np.concatenate(
+            [switch_line_tensor, force_line_reconnect_vector, force_line_disconnect_vector, set_bus_1_vector,
+             set_bus_2_vector, switch_bus_vector, redisp_vector])
+
+        if i == 0:
+            action_tensor = 1 - action_tensor
+        action_tensor = action_tensor / action_tensor.sum()
+        if action_tensor.sum() == 0:
+            v = 0
+        action_tensors.append(action_tensor)
+        i += 1
+    return np.array(action_tensors)
