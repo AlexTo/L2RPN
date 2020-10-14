@@ -5,38 +5,19 @@ The most simple implementation for continuous action.
 View more on my Chinese tutorial page [莫烦Python](https://morvanzhou.github.io/).
 """
 import logging
-import math
 import os
 from abc import ABC
+
 import numpy as np
 import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.nn.functional as F
-from setproctitle import setproctitle as ptitle
-
 from grid2op.Converter import IdToAct
 from grid2op.Environment import MultiMixEnvironment
-from torch import Tensor
-from torch.nn import init
+from setproctitle import setproctitle as ptitle
 
 from utils import v_wrap, set_init, push_and_pull, record, convert_obs, create_env, cuda, setup_worker_logging
-
-
-class TrainableElementWiseLayer(nn.Module):
-    weight: Tensor
-
-    def __init__(self, c, h, w):
-        super(TrainableElementWiseLayer, self).__init__()
-        self.weight = nn.Parameter(torch.Tensor(1, c, h, w))  # define the trainable parameter
-        self.reset_parameters()
-
-    def forward(self, x):
-        # assuming x is of size b-1-h-w
-        return x * self.weight  # element-wise multiplication
-
-    def reset_parameters(self) -> None:
-        init.kaiming_uniform_(self.weight, a=math.sqrt(5))
 
 
 class Net(nn.Module, ABC):
@@ -50,10 +31,6 @@ class Net(nn.Module, ABC):
         self.pi2 = nn.Linear(896, 896)
         self.pi3 = nn.Linear(896, action_mappings.shape[0])
 
-        self.point_wise_mul1 = TrainableElementWiseLayer(8, action_mappings.shape[0], action_mappings.shape[1])
-
-        self.conv1 = nn.Conv2d(in_channels=8, out_channels=1, kernel_size=1)
-
         self.v1 = nn.Linear(s_dim, 896)
         self.v2 = nn.Linear(896, 896)
         self.v3 = nn.Linear(896, 1)
@@ -65,10 +42,7 @@ class Net(nn.Module, ABC):
         pi2 = torch.tanh(pi1)
         pi3 = self.pi3(pi2)
 
-        am = F.relu(self.point_wise_mul1(self.action_mappings))
-        am = self.conv1(am)
-
-        logits = torch.matmul(pi3, am)
+        logits = torch.matmul(pi3, self.action_mappings)
 
         v1 = torch.tanh(self.v1(x))
         v2 = torch.tanh(v1)
