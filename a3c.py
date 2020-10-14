@@ -51,7 +51,6 @@ class Net(nn.Module, ABC):
         self.pi3 = nn.Linear(896, action_mappings.shape[0])
 
         self.point_wise_mul1 = TrainableElementWiseLayer(8, action_mappings.shape[0], action_mappings.shape[1])
-        self.point_wise_mul2 = TrainableElementWiseLayer(8, action_mappings.shape[0], action_mappings.shape[1])
 
         self.conv1 = nn.Conv2d(in_channels=8, out_channels=1, kernel_size=1)
 
@@ -67,7 +66,6 @@ class Net(nn.Module, ABC):
         pi3 = self.pi3(pi2)
 
         am = F.relu(self.point_wise_mul1(self.action_mappings))
-        am = F.relu(self.point_wise_mul2(am))
         am = self.conv1(am)
 
         logits = torch.matmul(pi3, am)
