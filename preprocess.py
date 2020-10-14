@@ -22,4 +22,4 @@ if __name__ == '__main__':
 
     if not os.path.exists(os.path.join("data", f"{config['env']}_action_mappings.npy")):
         action_mappings = create_action_mappings(env, action_space.all_actions, config["selected_action_types"])
-        np.save(os.path.join("data", f"{config['env']}_action_mappings.npy"), action_mappings)
+        np.save(os.path.join("data", f"{config['env']}_action_mappings.npy"), action_mappings.T)

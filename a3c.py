@@ -20,6 +20,16 @@ from grid2op.Environment import MultiMixEnvironment
 from utils import v_wrap, set_init, push_and_pull, record, convert_obs, create_env, cuda, setup_worker_logging
 
 
+class TrainableElementWiseLayer(nn.Module):
+    def __init__(self, c, h, w):
+        super(TrainableElementWiseLayer, self).__init__()
+        self.weights = nn.Parameter(torch.Tensor(1, c, h, w))  # define the trainable parameter
+
+    def forward(self, x):
+        # assuming x is of size b-1-h-w
+        return x * self.weights  # element-wise multiplication
+
+
 class Net(nn.Module, ABC):
     def __init__(self, s_dim, a_dim, action_mappings=None):
         super(Net, self).__init__()
@@ -29,9 +39,12 @@ class Net(nn.Module, ABC):
 
         self.pi1 = nn.Linear(s_dim, 896)
         self.pi2 = nn.Linear(896, 896)
-        self.pi3 = nn.Linear(896, action_mappings.shape[1])
+        self.pi3 = nn.Linear(896, action_mappings.shape[0])
 
-        self.conv2d_1 = nn.Conv2d()
+        self.point_wise_mul1 = TrainableElementWiseLayer(8, action_mappings.shape[0], action_mappings.shape[1])
+        self.point_wise_mul2 = TrainableElementWiseLayer(8, action_mappings.shape[0], action_mappings.shape[1])
+
+        self.conv1 = nn.Conv2d(in_channels=8, out_channels=1, kernel_size=1)
 
         self.v1 = nn.Linear(s_dim, 896)
         self.v2 = nn.Linear(896, 896)
@@ -44,7 +57,11 @@ class Net(nn.Module, ABC):
         pi2 = torch.tanh(pi1)
         pi3 = self.pi3(pi2)
 
-        logits = torch.matmul(pi3, self.action_mappings.T)
+        am = F.relu(self.point_wise_mul1(self.action_mappings))
+        am = F.relu(self.point_wise_mul2(am))
+        am = self.conv1(am)
+
+        logits = torch.matmul(pi3, am)
 
         v1 = torch.tanh(self.v1(x))
         v2 = torch.tanh(v1)
