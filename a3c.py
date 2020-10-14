@@ -5,6 +5,7 @@ The most simple implementation for continuous action.
 View more on my Chinese tutorial page [莫烦Python](https://morvanzhou.github.io/).
 """
 import logging
+import math
 import os
 from abc import ABC
 import numpy as np
@@ -16,18 +17,26 @@ from setproctitle import setproctitle as ptitle
 
 from grid2op.Converter import IdToAct
 from grid2op.Environment import MultiMixEnvironment
+from torch import Tensor
+from torch.nn import init
 
 from utils import v_wrap, set_init, push_and_pull, record, convert_obs, create_env, cuda, setup_worker_logging
 
 
 class TrainableElementWiseLayer(nn.Module):
+    weight: Tensor
+
     def __init__(self, c, h, w):
         super(TrainableElementWiseLayer, self).__init__()
-        self.weights = nn.Parameter(torch.Tensor(1, c, h, w))  # define the trainable parameter
+        self.weight = nn.Parameter(torch.Tensor(1, c, h, w))  # define the trainable parameter
+        self.reset_parameters()
 
     def forward(self, x):
         # assuming x is of size b-1-h-w
-        return x * self.weights  # element-wise multiplication
+        return x * self.weight  # element-wise multiplication
+
+    def reset_parameters(self) -> None:
+        init.kaiming_uniform_(self.weight, a=math.sqrt(5))
 
 
 class Net(nn.Module, ABC):

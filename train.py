@@ -13,7 +13,7 @@ os.environ["OMP_NUM_THREADS"] = "1"
 
 
 def train():
-    with open('config.json') as json_file:
+    with open('data/config.json') as json_file:
         config = json.load(json_file)
 
     # This will train on CPU with no error if the 2 lines below are commented. However, we need to set start mode to

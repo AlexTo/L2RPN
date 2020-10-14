@@ -8,7 +8,7 @@ from lightsim2grid.LightSimBackend import LightSimBackend
 from utils import create_action_mappings
 
 if __name__ == '__main__':
-    with open("config.json", 'r') as f:
+    with open("data/config.json", 'r') as f:
         config = json.load(f)
 
     env = grid2op.make(config["env"], backend=LightSimBackend())
