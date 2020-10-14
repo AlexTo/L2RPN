@@ -5,10 +5,10 @@ import grid2op
 from grid2op.Converter import IdToAct
 from lightsim2grid.LightSimBackend import LightSimBackend
 
-from beu_l2rpn.utils import create_action_mappings
+from utils import create_action_mappings
 
 if __name__ == '__main__':
-    with open("data/config.json", 'r') as f:
+    with open("config.json", 'r') as f:
         config = json.load(f)
 
     env = grid2op.make(config["env"], backend=LightSimBackend())

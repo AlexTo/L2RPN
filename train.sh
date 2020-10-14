@@ -1,3 +1,3 @@
 #!/bin/bash
 export PYTHONPATH="$PYTHONPATH:$PWD"
-python3 main.py
+python3 train.py
