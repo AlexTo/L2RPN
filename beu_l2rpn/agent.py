@@ -10,12 +10,13 @@ import torch.nn.functional as F
 from grid2op.Agent import AgentWithConverter
 from grid2op.Converter import IdToAct
 from grid2op.Environment import MultiMixEnvironment
+from torch.distributions import Categorical
 from torch.optim import Adam
 
 from beu_l2rpn.actor import Actor
 from beu_l2rpn.critic import Critic
 from beu_l2rpn.data_structures import ReplayBuffer
-from beu_l2rpn.utils import get_scalers, create_actor_distribution
+from beu_l2rpn.utils import create_action_mappings, init_obs_extraction, convert_obs
 
 
 class BeUAgent(AgentWithConverter):
@@ -26,8 +27,7 @@ class BeUAgent(AgentWithConverter):
         self.config = config
         self.device = torch.device("cuda" if config["use_gpu"] and torch.cuda.is_available() else "cpu")
 
-        self.hyper_parameters = config["hyper_parameters"]
-        self.selected_action_types = self.hyper_parameters["selected_action_types"]
+        self.selected_action_types = self.config["selected_action_types"]
 
         AgentWithConverter.__init__(self, env.action_space, action_space_converter=IdToAct)
 
@@ -41,17 +41,16 @@ class BeUAgent(AgentWithConverter):
         self.observation_space = env.observation_space
         self.set_random_seeds(config["seed"])
 
-        obs_idx, obs_size = self.init_obs_extraction(self.observation_space,
-                                                     self.hyper_parameters['selected_attributes'])
+        obs_idx, obs_size = init_obs_extraction(self.observation_space, self.config['selected_attributes'])
         self.obs_idx = obs_idx
 
         self.action_size = int(self.action_space.size())
         self.state_size = int(obs_size)
 
-        self.hyper_parameters["action_size"] = self.action_size
-        self.hyper_parameters["state_size"] = self.state_size
+        self.config["action_size"] = self.action_size
+        self.config["state_size"] = self.state_size
 
-        self.scalers = get_scalers()
+        self.scalers = config["attribute_scalers"]
 
         self.episode_number = 0
         self.resume_episode = -1
@@ -63,9 +62,9 @@ class BeUAgent(AgentWithConverter):
         if training:
             self.create_replay_buffer()
 
-        self.do_evaluation_iterations = self.hyper_parameters["do_evaluation_iterations"]
-        self.training_episodes_per_eval_episode = self.hyper_parameters["training_episodes_per_eval_episode"]
-        self.num_stack_frames = self.hyper_parameters["num_stack_frames"]
+        self.do_evaluation_iterations = self.config["do_evaluation_iterations"]
+        self.training_episodes_per_eval_episode = self.config["training_episodes_per_eval_episode"]
+        self.num_stack_frames = self.config["num_stack_frames"]
 
         self.episode_broken_lines = {}
         self.frames = []
@@ -86,17 +85,18 @@ class BeUAgent(AgentWithConverter):
 
     def load_action_mappings(self, action_mappings_matrix):
         config = self.config
+        action_mapping_file = config['action_mappings_matrix']
         if action_mappings_matrix is not None:
             self.action_mappings = action_mappings_matrix
-        elif os.path.exists(config['action_mappings_matrix']):
+        elif os.path.exists(action_mapping_file):
             with open(config['action_mappings_matrix'], 'rb') as f:
                 self.action_mappings = np.load(f)
         else:
-            self.action_mappings = self.get_action_mappings()
-            np.save(config['action_mappings_matrix'], self.action_mappings)
+            self.action_mappings = create_action_mappings(self.env, self.all_actions, config["selected_action_types"])
+            np.save(action_mapping_file, self.action_mappings)
 
     def create_replay_buffer(self):
-        self.memory = ReplayBuffer(self.hyper_parameters["buffer_size"], self.hyper_parameters["batch_size"],
+        self.memory = ReplayBuffer(self.config["buffer_size"], self.config["batch_size"],
                                    self.config["seed"])
         if os.path.exists(self.config["replay_buffer_file"]):
             self.memory.load(self.config["replay_buffer_file"])
@@ -105,146 +105,43 @@ class BeUAgent(AgentWithConverter):
     def create_networks(self):
         self.critic_1 = nn.DataParallel(Critic(input_dim=self.state_size * self.num_stack_frames,
                                                action_mappings=self.action_mappings,
-                                               config=self.hyper_parameters["Critic"])).to(self.device)
+                                               config=self.config["Critic"])).to(self.device)
 
         self.critic_2 = nn.DataParallel(Critic(input_dim=self.state_size * self.num_stack_frames,
                                                action_mappings=self.action_mappings,
-                                               config=self.hyper_parameters["Critic"])).to(self.device)
+                                               config=self.config["Critic"])).to(self.device)
 
         self.critic_target_1 = nn.DataParallel(Critic(input_dim=self.state_size * self.num_stack_frames,
                                                       action_mappings=self.action_mappings,
-                                                      config=self.hyper_parameters["Critic"])).to(self.device)
+                                                      config=self.config["Critic"])).to(self.device)
 
         self.critic_target_2 = nn.DataParallel(Critic(input_dim=self.state_size * self.num_stack_frames,
                                                       action_mappings=self.action_mappings,
-                                                      config=self.hyper_parameters["Critic"])).to(self.device)
+                                                      config=self.config["Critic"])).to(self.device)
 
         self.actor = nn.DataParallel(Actor(input_dim=self.state_size * self.num_stack_frames,
                                            action_mappings=self.action_mappings,
-                                           config=self.hyper_parameters["Actor"])).to(self.device)
+                                           config=self.config["Actor"])).to(self.device)
 
         self.critic_optimizer = torch.optim.Adam(self.critic_1.parameters(),
-                                                 lr=self.hyper_parameters["Critic"]["learning_rate"], eps=1e-4)
+                                                 lr=self.config["Critic"]["learning_rate"], eps=1e-4)
         self.critic_optimizer_2 = torch.optim.Adam(self.critic_2.parameters(),
-                                                   lr=self.hyper_parameters["Critic"]["learning_rate"], eps=1e-4)
+                                                   lr=self.config["Critic"]["learning_rate"], eps=1e-4)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),
-                                                lr=self.hyper_parameters["Actor"]["learning_rate"], eps=1e-4)
+                                                lr=self.config["Actor"]["learning_rate"], eps=1e-4)
 
         self.copy_model(self.critic_1, self.critic_target_1)
         self.copy_model(self.critic_2, self.critic_target_2)
 
-        self.automatic_entropy_tuning = self.hyper_parameters["automatically_tune_entropy_hyper_parameter"]
+        self.automatic_entropy_tuning = self.config["automatically_tune_entropy_hyper_parameter"]
         if self.automatic_entropy_tuning:
             # we set the max possible entropy as the target entropy
             self.target_entropy = -np.log(1.0 / self.action_size) * 0.98
             self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
             self.alpha = self.log_alpha.exp()
-            self.alpha_optim = Adam([self.log_alpha], lr=self.hyper_parameters["Actor"]["learning_rate"], eps=1e-4)
+            self.alpha_optim = Adam([self.log_alpha], lr=self.config["Actor"]["learning_rate"], eps=1e-4)
         else:
-            self.alpha = self.hyper_parameters["entropy_term_weight"]
-
-    @staticmethod
-    def get_topo_pos_vect(env, obj_type):
-        pos_vect = env.line_or_pos_topo_vect
-        if obj_type == 'line (origin)':
-            pos_vect = env.line_or_pos_topo_vect
-        elif obj_type == 'line (extremity)':
-            pos_vect = env.line_ex_pos_topo_vect
-        elif obj_type == 'load':
-            pos_vect = env.load_pos_topo_vect
-        elif obj_type == 'generator':
-            pos_vect = env.gen_pos_topo_vect
-        return pos_vect
-
-    def get_action_mappings(self):
-        env = self.env
-        selected_action_types = self.hyper_parameters["selected_action_types"]
-        all_actions = self.all_actions
-        action_tensors = []
-        for act in all_actions:
-            impacts = act.impact_on_objects()
-
-            switch_line_tensor = np.zeros(env.n_line)
-            if selected_action_types["switch_line"]:
-                switch_line_tensor[impacts['switch_line']['powerlines']] = 1
-
-            force_line_disconnect_vector = np.zeros(env.n_line)
-            if selected_action_types["force_line_disconnect"]:
-                force_line_disconnect_vector[impacts['force_line']['disconnections']['powerlines']] = 1
-
-            force_line_reconnect_vector = np.zeros(env.n_line)
-            if selected_action_types["force_line_reconnect"]:
-                force_line_reconnect_vector[impacts['force_line']['reconnections']['powerlines']] = 1
-
-            set_bus_1_vector = np.zeros(env.dim_topo)
-            set_bus_2_vector = np.zeros(env.dim_topo)
-
-            if selected_action_types["set_bus"]:
-                for bus_assign in impacts['topology']['assigned_bus']:
-                    if bus_assign['bus'] == 1:
-                        bus_vector = set_bus_1_vector
-                    else:
-                        bus_vector = set_bus_2_vector
-
-                    obj_id = bus_assign['object_id']
-                    obj_type = bus_assign['object_type']
-
-                    pos_vect = self.get_topo_pos_vect(env, obj_type)
-
-                    bus_vector[pos_vect[obj_id]] = 1
-
-            switch_bus_vector = np.zeros(env.dim_topo)
-            if selected_action_types["switch_bus"]:
-                for bus_switch in impacts['topology']['bus_switch']:
-                    obj_id = bus_switch['object_id']
-                    obj_type = bus_switch['object_type']
-                    pos_vect = self.get_topo_pos_vect(env, obj_type)
-                    switch_bus_vector[pos_vect[obj_id]] = 1
-
-            redisp_vector = np.zeros(env.n_gen * 8)
-            if selected_action_types["redispatch"]:
-                for redisp in impacts['redispatch']['generators']:
-                    obj_id = redisp['gen_id']
-                    dispatch_levels = np.linspace(-env.gen_max_ramp_down[obj_id], env.gen_max_ramp_up[obj_id], 9)
-                    level = np.argwhere(dispatch_levels == redisp['amount'])
-                    if level > 4:
-                        level = level - 1
-                    redisp_vector[obj_id * 8 + level] = 1
-
-            action_tensors.append(np.concatenate(
-                [switch_line_tensor, force_line_reconnect_vector, force_line_disconnect_vector, set_bus_1_vector,
-                 set_bus_2_vector, switch_bus_vector, redisp_vector]))
-
-        return np.array(action_tensors)
-
-    @staticmethod
-    def filter_action(action):
-        impacts = action.impact_on_objects()
-        if impacts['force_line']['changed'] and impacts['force_line']['disconnections']['count'] > 0:
-            return False
-        return True
-
-    @staticmethod
-    def init_obs_extraction(observation_space, selected_attributes):
-        idx = np.zeros(0, dtype=np.uint)
-        size = 0
-        for obs_attr_name in selected_attributes:
-            if not selected_attributes[obs_attr_name]:
-                continue
-            beg_, end_, dtype_ = observation_space.get_indx_extract(obs_attr_name)
-            idx = np.concatenate((idx, np.arange(beg_, end_, dtype=np.uint)))
-            size += end_ - beg_  # no "+1" needed because "end_" is exclude by python convention
-        return idx, size
-
-    def convert_obs(self, observation):
-        # TODO: transform observation from the environment to graph features using the agent's GNN
-        selected_attributes = self.hyper_parameters["selected_attributes"]
-        for attr in selected_attributes:
-            if not selected_attributes[attr]:
-                continue
-            setattr(observation, attr, getattr(observation, attr) / self.scalers[attr])
-        vect = observation.to_vect()
-        return vect[self.obs_idx]
+            self.alpha = self.config["entropy_term_weight"]
 
     def reset_game(self):
         if isinstance(self.env, MultiMixEnvironment):
@@ -272,6 +169,10 @@ class BeUAgent(AgentWithConverter):
         if len(self.next_frames) > self.num_stack_frames:
             self.next_frames.pop(0)
 
+    def convert_obs(self, observation):
+        return convert_obs(self.observation_space, observation, self.config["selected_attributes"],
+                           self.config["attribute_scalers"])
+
     def conduct_action(self, encoded_act):
         act = self.convert_act(encoded_act)
         """Conducts an action in the environment"""
@@ -287,23 +188,23 @@ class BeUAgent(AgentWithConverter):
             import neptune
             neptune.init(project_qualified_name=self.config["neptune_project_name"],
                          api_token=self.config["neptune_api_token"])
-            neptune.create_experiment(name="L2RPN", params=self.hyper_parameters)
+            neptune.create_experiment(name="L2RPN", params=self.config)
             self.neptune = neptune
 
-        while self.episode_number < self.hyper_parameters["train_num_episodes"]:
+        while self.episode_number < self.config["train_num_episodes"]:
             self.reset_game()
             self.run_episode()
             if self.episode_number % self.config["check_point_episodes"] == 0 \
-                    and self.global_step_number > self.hyper_parameters["min_steps_before_learning"]:
+                    and self.global_step_number > self.config["min_steps_before_learning"]:
                 self.save_model()
 
-            if self.global_step_number > self.hyper_parameters["min_steps_before_learning"] and not os.path.exists(
+            if self.global_step_number > self.config["min_steps_before_learning"] and not os.path.exists(
                     self.config["replay_buffer_file"]):
                 self.memory.save(self.config["replay_buffer_file"])
 
     def run_episode(self):
 
-        eval_ep = self.global_step_number > self.hyper_parameters["min_steps_before_learning"] and \
+        eval_ep = self.global_step_number > self.config["min_steps_before_learning"] and \
                   self.episode_number % self.training_episodes_per_eval_episode == 0 and \
                   self.do_evaluation_iterations
 
@@ -323,7 +224,7 @@ class BeUAgent(AgentWithConverter):
             self.conduct_action(self.action)
 
             if self.time_to_learn():
-                for _ in range(self.hyper_parameters["learning_updates_per_learning_session"]):
+                for _ in range(self.config["learning_updates_per_learning_session"]):
                     self.learn()
 
             self.stack_frame(self.state)
@@ -350,7 +251,7 @@ class BeUAgent(AgentWithConverter):
         if len(frames) < self.num_stack_frames:
             return 0
 
-        if self.global_step_number < self.hyper_parameters["min_steps_before_learning"]:
+        if self.global_step_number < self.config["min_steps_before_learning"]:
             encoded_act = self.random_action()
             print("Picking random action ", encoded_act)
             # added by Sonvx
@@ -364,7 +265,7 @@ class BeUAgent(AgentWithConverter):
         return encoded_act
 
     def act(self, state, reward, done=False):
-        hyper_params = self.hyper_parameters
+        hyper_params = self.config
         if not any(state.rho > int(hyper_params["danger_threshold"]["rho"])):
             return 0
 
@@ -447,13 +348,13 @@ class BeUAgent(AgentWithConverter):
     def time_to_learn(self):
         """Returns boolean indicating whether there are enough experiences to learn from and it is time to learn for the
         actor and critic"""
-        return self.global_step_number > self.hyper_parameters["min_steps_before_learning"] \
+        return self.global_step_number > self.config["min_steps_before_learning"] \
                and self.enough_exp_to_learn() \
-               and self.global_step_number % self.hyper_parameters["update_every_n_steps"] == 0
+               and self.global_step_number % self.config["update_every_n_steps"] == 0
 
     def enough_exp_to_learn(self):
         """Boolean indicated whether there are enough experiences in the memory buffer to learn from"""
-        return len(self.memory) > self.hyper_parameters["batch_size"]
+        return len(self.memory) > self.config["batch_size"]
 
     def sample_experiences(self):
         return self.memory.sample()
@@ -476,7 +377,7 @@ class BeUAgent(AgentWithConverter):
         the argmax action"""
         action_probs = self.actor(frames)
         max_prob_action = torch.argmax(action_probs, dim=-1)
-        action_distribution = create_actor_distribution("DISCRETE", action_probs, self.action_size)
+        action_distribution = Categorical(action_probs)
         action = action_distribution.sample().cpu()
         # Have to deal with situation of 0.0 probabilities because we can't do log 0
         z = action_probs == 0.0
@@ -496,7 +397,7 @@ class BeUAgent(AgentWithConverter):
             min_qf_next_target = action_probs * (
                     torch.min(qf1_next_target, qf2_next_target) - self.alpha * log_action_probs)
             min_qf_next_target = min_qf_next_target.sum(dim=1).unsqueeze(-1)
-            next_q_value = reward_batch + (1.0 - mask_batch) * self.hyper_parameters[
+            next_q_value = reward_batch + (1.0 - mask_batch) * self.config[
                 "discount_rate"] * min_qf_next_target
 
         qf1 = self.critic_1(state_batch).gather(1, action_batch.long())
@@ -550,19 +451,19 @@ class BeUAgent(AgentWithConverter):
     def update_critics(self, critic_loss_1, critic_loss_2):
         """Updates the parameters for the actor, both critics and (if specified) the temperature parameter"""
         self.take_optim_step(self.critic_optimizer, self.critic_1, critic_loss_1,
-                             self.hyper_parameters["Critic"]["gradient_clipping_norm"])
+                             self.config["Critic"]["gradient_clipping_norm"])
         self.take_optim_step(self.critic_optimizer_2, self.critic_2, critic_loss_2,
-                             self.hyper_parameters["Critic"]["gradient_clipping_norm"])
+                             self.config["Critic"]["gradient_clipping_norm"])
 
         self.soft_update(self.critic_1, self.critic_target_1,
-                         self.hyper_parameters["Critic"]["tau"])
+                         self.config["Critic"]["tau"])
         self.soft_update(self.critic_2, self.critic_target_2,
-                         self.hyper_parameters["Critic"]["tau"])
+                         self.config["Critic"]["tau"])
 
     def update_actor(self, actor_loss, alpha_loss):
         """Updates the parameters for the actor and (if specified) the temperature parameter"""
         self.take_optim_step(self.actor_optimizer, self.actor, actor_loss,
-                             self.hyper_parameters["Actor"]["gradient_clipping_norm"])
+                             self.config["Actor"]["gradient_clipping_norm"])
         if alpha_loss is not None:
             self.take_optim_step(self.alpha_optim, None, alpha_loss, None)
             self.alpha = self.log_alpha.exp()
