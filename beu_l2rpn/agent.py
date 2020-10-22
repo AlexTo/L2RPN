@@ -1,32 +1,33 @@
 import json
 import os
-import random
+import neptune
 from datetime import datetime
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from grid2op.Agent import AgentWithConverter
 from grid2op.Converter import IdToAct
 from grid2op.Environment import MultiMixEnvironment
 from torch.distributions import Categorical
-from torch.optim import Adam
 
-from beu_l2rpn.actor import Actor
-from beu_l2rpn.critic import Critic
-from beu_l2rpn.data_structures import ReplayBuffer
-from beu_l2rpn.utils import create_action_mappings, init_obs_extraction, convert_obs
+from beu_l2rpn.utils import convert_obs, set_random_seeds, take_optim_step, soft_update, create_networks
 
 
 class BeUAgent(AgentWithConverter):
 
-    def __init__(self, env, config, action_mappings_matrix, training=True, ):
+    def __init__(self, env, config, action_mappings_matrix, replay_buffer):
+
+        if config["neptune_enabled"]:
+            neptune.init(project_qualified_name=self.config["neptune_project_name"],
+                         api_token=self.config["neptune_api_token"])
+            neptune.create_experiment(name="L2RPN", params=self.config)
+            self.neptune = neptune
 
         self.env = env
         self.config = config
         self.device = torch.device("cuda" if config["use_gpu"] and torch.cuda.is_available() else "cpu")
-
+        self.memory = replay_buffer
         self.selected_action_types = self.config["selected_action_types"]
 
         AgentWithConverter.__init__(self, env.action_space, action_space_converter=IdToAct)
@@ -34,242 +35,115 @@ class BeUAgent(AgentWithConverter):
         # self.action_space.filter_action(self.filter_action)
         self.all_actions = np.array(self.action_space.all_actions)
 
-        self.action_mappings = action_mappings_matrix.to(self.device)
+        self.action_mappings = torch.tensor(action_mappings_matrix, dtype=torch.long).to(self.device)
 
         self.observation_space = env.observation_space
-        self.set_random_seeds(config["seed"])
+        set_random_seeds(env, config["seed"])
 
         self.action_size = int(self.action_space.size())
         self.state_size = int(config["state_size"])
 
         self.config["action_size"] = self.action_size
-        self.config["state_size"] = self.state_size
 
-        self.scalers = config["attribute_scalers"]
+        self.scalers = config["feature_scalers"]
 
-        self.episode_number = 0
-        self.resume_episode = -1
+        self.do_eval = self.config["do_eval"]
+        self.eval_freq = self.config["eval_freq"]
+
+        self.episode_broken_lines = {}
+        self.auto_entropy_tuning = config["auto_entropy_tuning"]
+
+        self.actor, self.critic_1, self.critic_2, self.critic_target_1, self.critic_target_2, self.actor_optimizer, \
+        self.critic_optimizer, self.critic_optimizer_2, self.alpha, self.log_alpha, self.alpha_optim, \
+        self.target_entropy = create_networks(config, self.action_size, self.state_size, self.action_mappings,
+                                              self.device)
+
         self.expected_return = 0
-        self.completed_episodes = 0
         self.failed_episodes = 0
+        self.completed_episodes = 0
+        self.eps_num = 0
         self.global_step_number = 0
 
-        if training:
-            self.create_replay_buffer()
+    def convert_obs(self, s, obs_is_vect=False):
+        return convert_obs(self.observation_space, s, self.config["selected_attributes"],
+                           self.config["attribute_scalers"], obs_is_vect)
 
-        self.do_evaluation_iterations = self.config["do_evaluation_iterations"]
-        self.training_episodes_per_eval_episode = self.config["training_episodes_per_eval_episode"]
-        self.num_stack_frames = self.config["num_stack_frames"]
-
-        self.episode_broken_lines = {}
-        self.frames = []
-        self.next_frames = []
-
-        self.create_networks()
-
-    def set_random_seeds(self, random_seed):
-        """Sets all possible random seeds so results can be reproduced"""
-        os.environ['PYTHONHASHSEED'] = str(random_seed)
-        torch.manual_seed(random_seed)
-        random.seed(random_seed)
-        np.random.seed(random_seed)
-        self.env.seed(random_seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(random_seed)
-            torch.cuda.manual_seed(random_seed)
-
-    def create_replay_buffer(self):
-        self.memory = ReplayBuffer(self.config["buffer_size"], self.config["batch_size"],
-                                   self.config["seed"])
-        if os.path.exists(self.config["replay_buffer_file"]):
-            self.memory.load(self.config["replay_buffer_file"])
-        self.global_step_number = len(self.memory)
-
-    def create_networks(self):
-        self.critic_1 = nn.DataParallel(Critic(input_dim=self.state_size * self.num_stack_frames,
-                                               action_mappings=self.action_mappings,
-                                               config=self.config["Critic"])).to(self.device)
-
-        self.critic_2 = nn.DataParallel(Critic(input_dim=self.state_size * self.num_stack_frames,
-                                               action_mappings=self.action_mappings,
-                                               config=self.config["Critic"])).to(self.device)
-
-        self.critic_target_1 = nn.DataParallel(Critic(input_dim=self.state_size * self.num_stack_frames,
-                                                      action_mappings=self.action_mappings,
-                                                      config=self.config["Critic"])).to(self.device)
-
-        self.critic_target_2 = nn.DataParallel(Critic(input_dim=self.state_size * self.num_stack_frames,
-                                                      action_mappings=self.action_mappings,
-                                                      config=self.config["Critic"])).to(self.device)
-
-        self.actor = nn.DataParallel(Actor(input_dim=self.state_size * self.num_stack_frames,
-                                           action_mappings=self.action_mappings,
-                                           config=self.config["Actor"])).to(self.device)
-
-        self.critic_optimizer = torch.optim.Adam(self.critic_1.parameters(),
-                                                 lr=self.config["Critic"]["learning_rate"], eps=1e-4)
-        self.critic_optimizer_2 = torch.optim.Adam(self.critic_2.parameters(),
-                                                   lr=self.config["Critic"]["learning_rate"], eps=1e-4)
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(),
-                                                lr=self.config["Actor"]["learning_rate"], eps=1e-4)
-
-        self.copy_model(self.critic_1, self.critic_target_1)
-        self.copy_model(self.critic_2, self.critic_target_2)
-
-        self.automatic_entropy_tuning = self.config["automatically_tune_entropy_hyper_parameter"]
-        if self.automatic_entropy_tuning:
-            # we set the max possible entropy as the target entropy
-            self.target_entropy = -np.log(1.0 / self.action_size) * 0.98
-            self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
-            self.alpha = self.log_alpha.exp()
-            self.alpha_optim = Adam([self.log_alpha], lr=self.config["Actor"]["learning_rate"], eps=1e-4)
-        else:
-            self.alpha = self.config["entropy_term_weight"]
-
-    def reset_game(self):
-        if isinstance(self.env, MultiMixEnvironment):
-            self.state = self.env.reset(random=True)
-        else:
-            self.state = self.env.reset()
-
-        self.next_state = None
-        self.action = None
-        self.reward = None
-        self.done = False
-        self.info = None
-        self.total_episode_score_so_far = 0
-        self.frames = []
-        self.next_frames = []
-        self.episode_broken_lines = {}
-
-    def stack_frame(self, state):
-        self.frames.append(state.copy())
-        if len(self.frames) > self.num_stack_frames:
-            self.frames.pop(0)
-
-    def stack_next_frame(self, next_state):
-        self.next_frames.append(next_state.copy())
-        if len(self.next_frames) > self.num_stack_frames:
-            self.next_frames.pop(0)
-
-    def convert_obs(self, observation):
-        return convert_obs(self.observation_space, observation, self.config["selected_attributes"],
-                           self.config["attribute_scalers"])
-
-    def conduct_action(self, encoded_act):
-        act = self.convert_act(encoded_act)
-        """Conducts an action in the environment"""
-        obs, self.reward, self.done, self.info = self.env.step(act)
-        self.next_state = obs
-        self.total_episode_score_so_far += self.reward
-
-    def random_action(self):
-        return np.random.randint(0, self.action_size)
+    def time_to_learn(self):
+        return self.global_step_number % self.config["update_every_n_steps"] == 0
 
     def train(self):
-        if self.config["neptune_enabled"]:
-            import neptune
-            neptune.init(project_qualified_name=self.config["neptune_project_name"],
-                         api_token=self.config["neptune_api_token"])
-            neptune.create_experiment(name="L2RPN", params=self.config)
-            self.neptune = neptune
+        while self.eps_num < self.config["train_num_episodes"]:
+            eval_ep = self.eps_num > 0 and self.eps_num % self.eval_freq == 0 and self.do_eval
 
-        while self.episode_number < self.config["train_num_episodes"]:
-            self.reset_game()
-            self.run_episode()
-            if self.episode_number % self.config["check_point_episodes"] == 0 \
-                    and self.global_step_number > self.config["min_steps_before_learning"]:
+            print(f"Env {self.env.name} | Chronic {self.env.chronics_handler.get_name()} | Episode: {self.eps_num} "
+                  f"| {'Train mode' if not eval_ep else 'Eval mode'}")
+
+            if isinstance(self.env, MultiMixEnvironment):
+                s = self.env.reset(random=True)
+            else:
+                s = self.env.reset()
+
+            eps_r = 0
+            done = False
+            eps_step = 0
+            info = None
+
+            while not done:
+                eps_step += 1
+                s = self.convert_obs(s)
+                encoded_act = self.actor_pick_act(s, eval_ep)
+                act = self.convert_act(encoded_act)
+                s2, r, done, info = self.env.step(act)
+                s2 = self.convert_obs(s2)
+                eps_r += r
+                if self.time_to_learn():
+                    for _ in range(self.config["updates_per_learning_session"]):
+                        self.learn()
+                if done:
+                    if len(info['exception']) > 0:
+                        r = -10
+                    else:
+                        r = 10
+                if not eval_ep:
+                    self.save_exp(experience=(s, encoded_act, r, s2, done))
+                s = s2
+                self.global_step_number += 1
+
+            self.eps_num += 1
+            if eval_ep:
+                self.log(eps_r, eps_step, info)
+
+            if self.eps_num % self.config["check_point_episodes"] == 0 and self.eps_num > 0:
                 self.save_model()
 
-            if self.global_step_number > self.config["min_steps_before_learning"] and not os.path.exists(
-                    self.config["replay_buffer_file"]):
-                self.memory.save(self.config["replay_buffer_file"])
+    def learn(self):
+        """Runs a learning iteration for the actor, both critics and (if specified) the temperature parameter"""
+        bs, ba, br, bs2, bdone = self.sample_experiences()
+        qf1_loss, qf2_loss = self.calc_critic_losses(bs, ba, br, bs2, bdone)
+        self.update_critics(qf1_loss, qf2_loss)
 
-    def run_episode(self):
+        policy_loss, log_pi = self.calc_actor_loss(bs)
 
-        eval_ep = self.global_step_number > self.config["min_steps_before_learning"] and \
-                  self.episode_number % self.training_episodes_per_eval_episode == 0 and \
-                  self.do_evaluation_iterations
-
-        print(f"Env {self.env.name} | Chronic {self.env.chronics_handler.get_name()} | Episode: {self.episode_number} "
-              f"| {'Train mode' if not eval_ep else 'Eval mode'}")
-
-        self.episode_step_number_val = 0
-
-        while not self.done:
-            self.episode_step_number_val += 1
-
-            if eval_ep:
-                self.action = self.act(self.state, self.reward, self.done)
-            else:
-                self.action = self.act_train()
-
-            self.conduct_action(self.action)
-
-            if self.time_to_learn():
-                for _ in range(self.config["learning_updates_per_learning_session"]):
-                    self.learn()
-
-            self.stack_frame(self.state)
-            self.stack_next_frame(self.next_state)
-            if self.done:
-                if len(self.info['exception']) > 0:
-                    self.reward = -1000
-                else:
-                    self.reward = 1000
-
-            if not eval_ep and len(self.frames) == self.num_stack_frames:
-                self.save_exp(experience=(self.frames, self.action, self.reward, self.next_frames, self.done))
-
-            self.state = self.next_state
-            self.global_step_number += 1
-
-        self.episode_number += 1
-        if eval_ep:
-            self.summarize_eval_episodes()
-
-    def act_train(self):
-        frames = self.frames
-
-        if len(frames) < self.num_stack_frames:
-            return 0
-
-        if self.global_step_number < self.config["min_steps_before_learning"]:
-            encoded_act = self.random_action()
-            print("Picking random action ", encoded_act)
-            # added by Sonvx
-            self.log_metric('random action', encoded_act)
+        if self.auto_entropy_tuning:
+            alpha_loss = self.calc_entropy_tuning_loss(log_pi)
         else:
-            encoded_act = self.actor_pick_action()
-            # added by Sonvx
-            self.log_metric('sampled action', encoded_act)
-            print("Picking model sampled action ", encoded_act)
+            alpha_loss = None
 
-        return encoded_act
+        self.update_actor(policy_loss, alpha_loss)
 
-    def act(self, state, reward, done=False):
-        hyper_params = self.config
-        if not any(state.rho > int(hyper_params["danger_threshold"]["rho"])):
-            return 0
-
-        frames = self.frames
-
-        if len(frames) < self.num_stack_frames:
-            return 0
-
-        encoded_act = self.actor_pick_action(eval_ep=True)
-
-        return encoded_act
+        self.log_metric('qf1_loss', qf1_loss.item())
+        self.log_metric('qf2_loss', qf2_loss.item())
+        self.log_metric('policy_loss', policy_loss.item())
+        self.log_metric('alpha_loss', alpha_loss.item())
 
     def my_act(self, transformed_observation, reward, done=False):
         pass
 
-    def try_reconnect_power_line(self):
+    def try_reconnect_power_line(self, s):
 
-        state = self.state
         act = None
 
-        zero_rhos = np.where(state.rho <= 0)[0]
+        zero_rhos = np.where(s.rho <= 0)[0]
 
         for line_id in zero_rhos:
             if line_id in self.episode_broken_lines:
@@ -285,10 +159,10 @@ class BeUAgent(AgentWithConverter):
 
         for line in self.episode_broken_lines:
             timesteps_after_broken = self.episode_broken_lines[line]
-            if timesteps_after_broken == 10 and state.time_before_cooldown_line[line] == 0:
+            if timesteps_after_broken == 10 and s.time_before_cooldown_line[line] == 0:
                 for o, e in [(1, 1), (1, 2), (2, 1), (2, 2)]:
                     propose_act = self.action_space.reconnect_powerline(line_id=line, bus_or=o, bus_ex=e)
-                    sim_obs, sim_reward, sim_done, info = state.simulate(propose_act)
+                    sim_obs, sim_reward, sim_done, info = s.simulate(propose_act)
                     if not sim_done:
                         act = propose_act
                         break
@@ -296,109 +170,81 @@ class BeUAgent(AgentWithConverter):
                 break
         return act
 
-    def actor_pick_action(self, eval_ep=False):
-        """ Uses actor to pick an action in one of two ways:
-        1) If eval = False and we aren't in eval mode then it picks an action that has partly been randomly sampled
-        2) If eval = True then we pick the action with max probability"""
-
-        frames = self.frames
-
-        frames = np.concatenate([self.convert_obs(frame) for frame in frames])
-        frames = torch.FloatTensor(frames).to(self.device)
-
-        if len(frames.shape) == 1:
-            frames = frames.unsqueeze(0)
+    def actor_pick_act(self, s, eval_ep=False):
         if not eval_ep:
-            action, _, _ = self.produce_action_and_action_info(frames)
+            act, _, _ = self.forward(s)
         else:
             with torch.no_grad():
-                _, z, action = self.produce_action_and_action_info(frames)
-        action = action.detach().cpu().numpy()
-        return action[0]
+                _, z, act = self.forward(s)
+        act = act.detach().cpu().numpy()
+        return act[0]
 
-    def summarize_eval_episodes(self):
-        self.expected_return += (self.total_episode_score_so_far - self.expected_return) / (
-                self.episode_number / self.training_episodes_per_eval_episode)
-        if len(self.info["exception"]) > 0:
+    def log(self, eps_r, eps_step, info):
+        self.expected_return += (eps_r - self.expected_return) / (
+                self.eps_num / self.eval_freq)
+        if len(info["exception"]) > 0:
             self.failed_episodes += 1
         else:
             self.completed_episodes += 1
         self.log_metric('expected return', self.expected_return)
-        self.log_metric('episode reward', self.total_episode_score_so_far)
-        self.log_metric("number of steps completed", self.episode_step_number_val)
+        self.log_metric('episode reward', eps_r)
+        self.log_metric("number of steps completed", eps_step)
         self.log_metric('number of episodes completed', self.completed_episodes)
-
-    def time_to_learn(self):
-        """Returns boolean indicating whether there are enough experiences to learn from and it is time to learn for the
-        actor and critic"""
-        return self.global_step_number > self.config["min_steps_before_learning"] \
-               and self.enough_exp_to_learn() \
-               and self.global_step_number % self.config["update_every_n_steps"] == 0
-
-    def enough_exp_to_learn(self):
-        """Boolean indicated whether there are enough experiences in the memory buffer to learn from"""
-        return len(self.memory) > self.config["batch_size"]
 
     def sample_experiences(self):
         return self.memory.sample()
 
     def save_exp(self, experience):
-
-        frames, action, reward, next_frames, done = experience
-
-        frames = np.concatenate([self.convert_obs(frame) for frame in frames])
-        next_frames = np.concatenate([self.convert_obs(frame) for frame in next_frames])
-
-        self.memory.add_experience(frames, action, reward, next_frames, done)
+        s, a, r, s2, done = experience
+        self.memory.add_experience(s, a, r, s2, done)
 
     def init_graph(self):
         # TODO: create graph neural net (GNN) from environment observation space
         pass
 
-    def produce_action_and_action_info(self, frames):
+    def forward(self, s):
         """Given the state, produces an action, the probability of the action, the log probability of the action, and
         the argmax action"""
-        action_probs = self.actor(frames)
-        max_prob_action = torch.argmax(action_probs, dim=-1)
-        action_distribution = Categorical(action_probs)
-        action = action_distribution.sample().cpu()
+        act_probs = self.actor(s)
+        max_prob_act = torch.argmax(act_probs, dim=-1)
+        act_dist = Categorical(act_probs)
+        act = act_dist.sample().cpu()
         # Have to deal with situation of 0.0 probabilities because we can't do log 0
-        z = action_probs == 0.0
+        z = act_probs == 0.0
         z = z.float() * 1e-8
-        log_action_probs = torch.log(action_probs + z)
-        return action, (action_probs, log_action_probs), max_prob_action
+        log_probs = torch.log(act_probs + z)
+        return act, (act_probs, log_probs), max_prob_act
 
-    def calc_critic_losses(self, state_batch, action_batch, reward_batch, next_state_batch, mask_batch):
+    def calc_critic_losses(self, bs, ba, br, bs2, bdone):
         """Calculates the losses for the two critics. This is the ordinary Q-learning loss except the additional entropy
          term is taken into account"""
         with torch.no_grad():
-            next_state_action, (
-                action_probs, log_action_probs), _ = self.produce_action_and_action_info(
-                next_state_batch)
-            qf1_next_target = self.critic_target_1(next_state_batch)
-            qf2_next_target = self.critic_target_2(next_state_batch)
-            min_qf_next_target = action_probs * (
-                    torch.min(qf1_next_target, qf2_next_target) - self.alpha * log_action_probs)
+            act, (
+                act_probs, log_probs), _ = self.forward(
+                bs2)
+            qf1_next_target = self.critic_target_1(bs2)
+            qf2_next_target = self.critic_target_2(bs2)
+            min_qf_next_target = act_probs * (
+                    torch.min(qf1_next_target, qf2_next_target) - self.alpha * log_probs)
             min_qf_next_target = min_qf_next_target.sum(dim=1).unsqueeze(-1)
-            next_q_value = reward_batch + (1.0 - mask_batch) * self.config[
-                "discount_rate"] * min_qf_next_target
+            next_q_value = br + (1.0 - bdone) * self.config["discount_rate"] * min_qf_next_target
 
-        qf1 = self.critic_1(state_batch).gather(1, action_batch.long())
-        qf2 = self.critic_2(state_batch).gather(1, action_batch.long())
+        qf1 = self.critic_1(bs).gather(1, ba.long())
+        qf2 = self.critic_2(bs).gather(1, ba.long())
         qf1_loss = F.mse_loss(qf1, next_q_value)
         qf2_loss = F.mse_loss(qf2, next_q_value)
         return qf1_loss, qf2_loss
 
     def calc_actor_loss(self, state_batch):
         """Calculates the loss for the actor. This loss includes the additional entropy term"""
-        action, (action_probs, log_action_probs), _ = self.produce_action_and_action_info(state_batch)
+        act, (act_probs, log_probs), _ = self.forward(state_batch)
         qf1_pi = self.critic_1(state_batch)
         qf2_pi = self.critic_2(state_batch)
         min_qf_pi = torch.min(qf1_pi, qf2_pi)
-        inside_term = self.alpha * log_action_probs - min_qf_pi
-        policy_loss = (action_probs * inside_term).sum(dim=1).mean()
-        log_action_probs = torch.sum(log_action_probs * action_probs, dim=1)
-        return policy_loss, log_action_probs
+        inside_term = self.alpha * log_probs - min_qf_pi
+        policy_loss = (act_probs * inside_term).sum(dim=1).mean()
+        log_probs = torch.sum(log_probs * act_probs, dim=1)
+        return policy_loss, log_probs
 
     def calc_entropy_tuning_loss(self, log_pi):
         """Calculates the loss for the entropy temperature parameter. This is only relevant if self.automatic_entropy_tuning
@@ -406,58 +252,37 @@ class BeUAgent(AgentWithConverter):
         alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
         return alpha_loss
 
-    def learn(self):
-        """Runs a learning iteration for the actor, both critics and (if specified) the temperature parameter"""
-        state_batch, action_batch, reward_batch, next_state_batch, mask_batch = self.sample_experiences()
-        qf1_loss, qf2_loss = self.calc_critic_losses(state_batch, action_batch, reward_batch, next_state_batch,
-                                                     mask_batch)
-        self.update_critics(qf1_loss, qf2_loss)
-
-        policy_loss, log_pi = self.calc_actor_loss(state_batch)
-
-        if self.automatic_entropy_tuning:
-            alpha_loss = self.calc_entropy_tuning_loss(log_pi)
-        else:
-            alpha_loss = None
-
-        self.update_actor(policy_loss, alpha_loss)
-
-        self.log_metric('qf1_loss', qf1_loss.item())
-        self.log_metric('qf2_loss', qf2_loss.item())
-        self.log_metric('policy_loss', policy_loss.item())
-        self.log_metric('alpha_loss', alpha_loss.item())
-
     def log_metric(self, metric_name, metric):
         if self.config["neptune_enabled"]:
             self.neptune.log_metric(metric_name, metric)
 
     def update_critics(self, critic_loss_1, critic_loss_2):
         """Updates the parameters for the actor, both critics and (if specified) the temperature parameter"""
-        self.take_optim_step(self.critic_optimizer, self.critic_1, critic_loss_1,
-                             self.config["Critic"]["gradient_clipping_norm"])
-        self.take_optim_step(self.critic_optimizer_2, self.critic_2, critic_loss_2,
-                             self.config["Critic"]["gradient_clipping_norm"])
+        take_optim_step(self.critic_optimizer, self.critic_1, critic_loss_1,
+                        self.config["Critic"]["gradient_clipping_norm"])
+        take_optim_step(self.critic_optimizer_2, self.critic_2, critic_loss_2,
+                        self.config["Critic"]["gradient_clipping_norm"])
 
-        self.soft_update(self.critic_1, self.critic_target_1,
-                         self.config["Critic"]["tau"])
-        self.soft_update(self.critic_2, self.critic_target_2,
-                         self.config["Critic"]["tau"])
+        soft_update(self.critic_1, self.critic_target_1,
+                    self.config["Critic"]["tau"])
+        soft_update(self.critic_2, self.critic_target_2,
+                    self.config["Critic"]["tau"])
 
     def update_actor(self, actor_loss, alpha_loss):
         """Updates the parameters for the actor and (if specified) the temperature parameter"""
-        self.take_optim_step(self.actor_optimizer, self.actor, actor_loss,
-                             self.config["Actor"]["gradient_clipping_norm"])
+        take_optim_step(self.actor_optimizer, self.actor, actor_loss,
+                        self.config["Actor"]["gradient_clipping_norm"])
         if alpha_loss is not None:
-            self.take_optim_step(self.alpha_optim, None, alpha_loss, None)
+            take_optim_step(self.alpha_optim, None, alpha_loss, None)
             self.alpha = self.log_alpha.exp()
 
     def save_model(self):
         cfg = self.config
         timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        save_dir = os.path.join(cfg["check_point_folder"], f"{timestamp}_episode_{self.episode_number}")
+        save_dir = os.path.join(cfg["check_point_folder"], f"{timestamp}_episode_{self.eps_num}")
         os.makedirs(save_dir)
         torch.save({
-            "resume_episode": self.episode_number,
+            "resume_episode": self.eps_num,
             "global_step_number": self.global_step_number,
             "critic_local": self.critic_1.state_dict(),
             "critic_local_2": self.critic_2.state_dict(),
@@ -473,36 +298,10 @@ class BeUAgent(AgentWithConverter):
 
     def load_model(self, path):
         chk_point = torch.load(path, map_location=self.device)
-        self.episode_number = chk_point["resume_episode"]
+        self.eps_num = chk_point["resume_episode"]
         self.global_step_number = chk_point["global_step_number"]
         self.critic_1.load_state_dict(chk_point["critic_local"])
         self.critic_2.load_state_dict(chk_point["critic_local_2"])
         self.critic_target_1.load_state_dict(chk_point["critic_target"])
         self.critic_target_2.load_state_dict(chk_point["critic_target_2"])
         self.actor.load_state_dict(chk_point["actor_local"])
-
-    @staticmethod
-    def take_optim_step(optimizer, network, loss, clipping_norm=None, retain_graph=False):
-        """Takes an optimisation step by calculating gradients given the loss and then updating the parameters"""
-        if not isinstance(network, list):
-            network = [network]
-        optimizer.zero_grad()  # reset gradients to 0
-        loss.backward(retain_graph=retain_graph)  # this calculates the gradients
-        if clipping_norm is not None:
-            for net in network:
-                torch.nn.utils.clip_grad_norm_(net.parameters(),
-                                               clipping_norm)  # clip gradients to help stabilise training
-        optimizer.step()  # this applies the gradients
-
-    @staticmethod
-    def soft_update(local_model, target_model, tau):
-        """Updates the target network in the direction of the local network but by taking a step size
-        less than one so the target network's parameter values trail the local networks. This helps stabilise training"""
-        for target_param, local_param in zip(target_model.parameters(), local_model.parameters()):
-            target_param.data.copy_(tau * local_param.data + (1.0 - tau) * target_param.data)
-
-    @staticmethod
-    def copy_model(from_model, to_model):
-        """Copies model parameters from from_model to to_model"""
-        for to_model, from_model in zip(to_model.parameters(), from_model.parameters()):
-            to_model.data.copy_(from_model.data.clone())

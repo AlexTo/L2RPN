@@ -8,6 +8,11 @@ from grid2op.Environment import MultiMixEnvironment
 from grid2op.Reward import CombinedReward, RedispReward, EconomicReward, CloseToOverflowReward, GameplayReward, \
     LinesReconnectedReward, L2RPNReward
 from lightsim2grid import LightSimBackend
+from torch import nn
+from torch.optim import Adam
+
+from beu_l2rpn.actor import Actor
+from beu_l2rpn.critic import Critic
 
 
 def shuffle(x):
@@ -77,8 +82,12 @@ def get_topo_pos_vect(env, obj_type):
     return pos_vect
 
 
-def convert_obs(observation_space, observation, selected_attributes, scalers):
-    vect = observation.to_vect()
+def convert_obs(observation_space, observation, selected_attributes, scalers, obs_is_vect=False):
+    if not obs_is_vect:
+        vect = observation.to_vect()
+    else:
+        vect = observation
+
     feature_vects = []
     for attr in selected_attributes:
         if not selected_attributes[attr]:
@@ -112,16 +121,16 @@ def convert_obs(observation_space, observation, selected_attributes, scalers):
     return np.concatenate(feature_vects)
 
 
-def set_random_seeds(seed):
+def set_random_seeds(env, random_seed):
     """Sets all possible random seeds so results can be reproduced"""
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    torch.manual_seed(seed)
-    random.seed(seed)
-    np.random.seed(seed)
-
+    os.environ['PYTHONHASHSEED'] = str(random_seed)
+    torch.manual_seed(random_seed)
+    random.seed(random_seed)
+    np.random.seed(random_seed)
+    env.seed(random_seed)
     if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(random_seed)
+        torch.cuda.manual_seed(random_seed)
 
 
 def create_action_mappings(env, all_actions, selected_action_types):
@@ -191,3 +200,72 @@ def create_action_mappings(env, all_actions, selected_action_types):
             print(f"Action mappings: Processed {i} actions")
 
     return np.array(action_tensors)
+
+
+def take_optim_step(optimizer, network, loss, clipping_norm=None, retain_graph=False):
+    """Takes an optimisation step by calculating gradients given the loss and then updating the parameters"""
+    if not isinstance(network, list):
+        network = [network]
+    optimizer.zero_grad()  # reset gradients to 0
+    loss.backward(retain_graph=retain_graph)  # this calculates the gradients
+    if clipping_norm is not None:
+        for net in network:
+            torch.nn.utils.clip_grad_norm_(net.parameters(),
+                                           clipping_norm)  # clip gradients to help stabilise training
+    optimizer.step()  # this applies the gradients
+
+
+def soft_update(local_model, target_model, tau):
+    """Updates the target network in the direction of the local network but by taking a step size
+    less than one so the target network's parameter values trail the local networks. This helps stabilise training"""
+    for target_param, local_param in zip(target_model.parameters(), local_model.parameters()):
+        target_param.data.copy_(tau * local_param.data + (1.0 - tau) * target_param.data)
+
+
+def copy_model(from_model, to_model):
+    """Copies model parameters from from_model to to_model"""
+    for to_model, from_model in zip(to_model.parameters(), from_model.parameters()):
+        to_model.data.copy_(from_model.data.clone())
+
+
+def create_networks(config, action_size, state_size, action_mappings, device):
+    critic_1 = nn.DataParallel(Critic(input_dim=state_size,
+                                      action_mappings=action_mappings,
+                                      config=config["Critic"])).to(device)
+
+    critic_2 = nn.DataParallel(Critic(input_dim=state_size,
+                                      action_mappings=action_mappings,
+                                      config=config["Critic"])).to(device)
+
+    critic_target_1 = nn.DataParallel(Critic(input_dim=state_size,
+                                             action_mappings=action_mappings,
+                                             config=config["Critic"])).to(device)
+
+    critic_target_2 = nn.DataParallel(Critic(input_dim=state_size,
+                                             action_mappings=action_mappings,
+                                             config=config["Critic"])).to(device)
+
+    actor = nn.DataParallel(Actor(input_dim=state_size,
+                                  action_mappings=action_mappings,
+                                  config=config["Actor"])).to(device)
+
+    critic_optimizer = torch.optim.Adam(critic_1.parameters(), lr=config["Critic"]["learning_rate"], eps=1e-4)
+    critic_optimizer_2 = torch.optim.Adam(critic_2.parameters(), lr=config["Critic"]["learning_rate"], eps=1e-4)
+    actor_optimizer = torch.optim.Adam(actor.parameters(), lr=config["Actor"]["learning_rate"], eps=1e-4)
+
+    copy_model(critic_1, critic_target_1)
+    copy_model(critic_2, critic_target_2)
+
+    auto_entropy_tuning = config["auto_entropy_tuning"]
+    log_alpha, alpha_optim, target_entropy = None, None, None
+    if auto_entropy_tuning:
+        # we set the max possible entropy as the target entropy
+        target_entropy = -np.log(1.0 / action_size) * 0.98
+        log_alpha = torch.zeros(1, requires_grad=True, device=device)
+        alpha = log_alpha.exp()
+        alpha_optim = Adam([log_alpha], lr=config["Actor"]["learning_rate"], eps=1e-4)
+    else:
+        alpha = config["entropy_term_weight"]
+
+    return actor, critic_1, critic_2, critic_target_1, critic_target_2, actor_optimizer, critic_optimizer, \
+           critic_optimizer_2, alpha, log_alpha, alpha_optim, target_entropy

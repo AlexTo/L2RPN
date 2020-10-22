@@ -22,11 +22,11 @@ class Critic(nn.Module, ABC):
 
         fc_layers.update(
             {f'hidden{len(fc_layers_conf)}': nn.Linear(in_features=fc_layers_conf[-1],
-                                                       out_features=action_mappings.shape[1])})
+                                                       out_features=action_mappings.shape[0])})
 
         self.fc_layers = nn.Sequential(fc_layers)
 
     def forward(self, state_batch):
         out = self.fc_layers(state_batch)
-        out = out.matmul(self.action_mappings.T)
+        out = out.matmul(self.action_mappings)
         return out
