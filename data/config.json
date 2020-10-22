@@ -12,8 +12,8 @@
   "discount_rate": 0.99,
   "buffer_size": 1000000,
   "state_size": 13065,
-  "num_experience_gen": 500000,
-  "num_experience_gen_processes": 8,
+  "num_experience_gen": 800000,
+  "num_experience_gen_processes": 16,
   "Actor": {
     "hidden_layers": [
       1024,

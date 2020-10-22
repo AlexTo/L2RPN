@@ -39,7 +39,7 @@ def create_env(env, seed):
     cr.addReward("recolines", LinesReconnectedReward(), 0.1)
     cr.addReward("l2rpn", L2RPNReward(), .6 / float(environment.n_line))
     # Initialize custom rewards
-    # cr.set_range(-1.0, 1.0)
+    cr.set_range(0.0, 1.0)
     cr.initialize(environment)
     environment.seed(seed)
     shuffle_env_chronics(environment)

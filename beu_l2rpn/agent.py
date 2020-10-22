@@ -110,9 +110,10 @@ class BeUAgent(AgentWithConverter):
                         self.learn()
                 if done:
                     if len(info['exception']) > 0:
-                        r = -10
+                        r = 0
                     else:
-                        r = 10
+                        r = 1.0
+
                 if not eval_ep:
                     self.save_exp(experience=(s_vect, encoded_act, r, s2_vect, done))
                 s = s2
