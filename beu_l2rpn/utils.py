@@ -1,5 +1,9 @@
+import os
+import random
+
 import grid2op
 import numpy as np
+import torch
 from grid2op.Environment import MultiMixEnvironment
 from grid2op.Reward import CombinedReward, RedispReward, EconomicReward, CloseToOverflowReward, GameplayReward, \
     LinesReconnectedReward, L2RPNReward
@@ -37,6 +41,29 @@ def create_env(env, seed):
     return environment
 
 
+def filter_action(action):
+    impacts = action.impact_on_objects()
+    if impacts['force_line']['changed'] and impacts['force_line']['disconnections']['count'] > 0:
+        return False
+    return True
+
+
+def init_obs_extraction(observation_space, selected_attributes):
+    idx = np.zeros(0, dtype=np.uint)
+    size = 0
+    for obs_attr_name in selected_attributes:
+        if not selected_attributes[obs_attr_name]:
+            continue
+        beg_, end_, dtype_ = observation_space.get_indx_extract(obs_attr_name)
+        idx = np.concatenate((idx, np.arange(beg_, end_, dtype=np.uint)))
+        size += end_ - beg_  # no "+1" needed because "end_" is exclude by python convention
+    return idx, size
+
+
+def has_overflow(obs):
+    return any(obs.rho > 1.02)
+
+
 def get_topo_pos_vect(env, obj_type):
     pos_vect = env.line_or_pos_topo_vect
     if obj_type == 'line (origin)':
@@ -48,6 +75,53 @@ def get_topo_pos_vect(env, obj_type):
     elif obj_type == 'generator':
         pos_vect = env.gen_pos_topo_vect
     return pos_vect
+
+
+def convert_obs(observation_space, observation, selected_attributes, scalers):
+    vect = observation.to_vect()
+    feature_vects = []
+    for attr in selected_attributes:
+        if not selected_attributes[attr]:
+            continue
+        beg_, end_, _ = observation_space.get_indx_extract(attr)
+        if attr == "topo_vect":
+            topo_vect = vect[beg_:end_].astype("int")
+            feature_vect = np.zeros((topo_vect.size, 2))
+            feature_vect[np.arange(topo_vect.size), topo_vect - 1] = 1
+            feature_vect = feature_vect.flatten()
+        elif attr == "timestep_overflow":
+            timestep_overflow = vect[beg_:end_].astype("int")
+            feature_vect = np.zeros((timestep_overflow.size, 4))
+            feature_vect[np.arange(timestep_overflow.size), timestep_overflow] = 1
+            feature_vect = feature_vect.flatten()
+        elif attr == "time_before_cooldown_line" or attr == "time_before_cooldown_sub" \
+                or attr == "time_next_maintenance" or attr == "duration_next_maintenance":
+            v = vect[beg_:end_].astype("int")
+            if attr == "time_next_maintenance":
+                v = v + 1  # because time_next_maintenance can be -1
+
+            v[v > 12] = 12
+            feature_vect = np.zeros((v.size, 13))
+            feature_vect[np.arange(v.size), v] = 1
+            feature_vect = feature_vect.flatten()
+        else:
+            feature_vect = vect[beg_:end_]
+
+        feature_vect = feature_vect / scalers[attr]
+        feature_vects.append(feature_vect)
+    return np.concatenate(feature_vects)
+
+
+def set_random_seeds(seed):
+    """Sets all possible random seeds so results can be reproduced"""
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    torch.manual_seed(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+        torch.cuda.manual_seed(seed)
 
 
 def create_action_mappings(env, all_actions, selected_action_types):
@@ -113,63 +187,7 @@ def create_action_mappings(env, all_actions, selected_action_types):
         action_tensor = action_tensor / action_tensor.sum()
         action_tensors.append(action_tensor)
         i += 1
+        if i % 1000 == 0:
+            print(f"Action mappings: Processed {i} actions")
 
     return np.array(action_tensors)
-
-
-def filter_action(action):
-    impacts = action.impact_on_objects()
-    if impacts['force_line']['changed'] and impacts['force_line']['disconnections']['count'] > 0:
-        return False
-    return True
-
-
-def init_obs_extraction(observation_space, selected_attributes):
-    idx = np.zeros(0, dtype=np.uint)
-    size = 0
-    for obs_attr_name in selected_attributes:
-        if not selected_attributes[obs_attr_name]:
-            continue
-        beg_, end_, dtype_ = observation_space.get_indx_extract(obs_attr_name)
-        idx = np.concatenate((idx, np.arange(beg_, end_, dtype=np.uint)))
-        size += end_ - beg_  # no "+1" needed because "end_" is exclude by python convention
-    return idx, size
-
-
-def convert_obs(observation_space, observation, selected_attributes, scalers):
-    # TODO: transform observation from the environment to graph features using the agent's GNN
-    vect = observation.to_vect()
-    feature_vects = []
-    for attr in selected_attributes:
-        if not selected_attributes[attr]:
-            continue
-        beg_, end_, _ = observation_space.get_indx_extract(attr)
-        if attr == "topo_vect":
-            topo_vect = vect[beg_:end_].astype("int")
-            feature_vect = np.zeros((topo_vect.size, 2))
-            feature_vect[np.arange(topo_vect.size), topo_vect - 1] = 1
-            feature_vect = feature_vect.flatten()
-        elif attr == "timestep_overflow":
-            timestep_overflow = vect[beg_:end_].astype("int")
-            feature_vect = np.zeros((timestep_overflow.size, 4))
-            feature_vect[np.arange(timestep_overflow.size), timestep_overflow] = 1
-            feature_vect = feature_vect.flatten()
-        elif attr == "time_before_cooldown_line" or attr == "time_before_cooldown_sub" \
-                or attr == "time_next_maintenance" or attr == "duration_next_maintenance":
-            v = vect[beg_:end_].astype("int")
-            if sum(v) > 0:
-                i = 1
-            v[v > 12] = 12
-            feature_vect = np.zeros((v.size, 13))
-            feature_vect[np.arange(v.size), v] = 1
-            feature_vect = feature_vect.flatten()
-        else:
-            feature_vect = vect[beg_:end_]
-
-        feature_vect = feature_vect / scalers[attr]
-        feature_vects.append(feature_vect)
-    return np.concatenate(feature_vects)
-
-
-def has_overflow(obs):
-    return any(obs.rho > 1.02)

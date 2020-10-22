@@ -21,7 +21,7 @@ from beu_l2rpn.utils import create_action_mappings, init_obs_extraction, convert
 
 class BeUAgent(AgentWithConverter):
 
-    def __init__(self, env, config, training=True, action_mappings_matrix=None):
+    def __init__(self, env, config, action_mappings_matrix, training=True, ):
 
         self.env = env
         self.config = config
@@ -34,18 +34,13 @@ class BeUAgent(AgentWithConverter):
         # self.action_space.filter_action(self.filter_action)
         self.all_actions = np.array(self.action_space.all_actions)
 
-        self.load_action_mappings(action_mappings_matrix)
-
-        self.action_mappings = torch.tensor(self.action_mappings, requires_grad=False).float().to(self.device)
+        self.action_mappings = action_mappings_matrix.to(self.device)
 
         self.observation_space = env.observation_space
         self.set_random_seeds(config["seed"])
 
-        obs_idx, obs_size = init_obs_extraction(self.observation_space, self.config['selected_attributes'])
-        self.obs_idx = obs_idx
-
         self.action_size = int(self.action_space.size())
-        self.state_size = int(obs_size)
+        self.state_size = int(config["state_size"])
 
         self.config["action_size"] = self.action_size
         self.config["state_size"] = self.state_size
@@ -82,18 +77,6 @@ class BeUAgent(AgentWithConverter):
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(random_seed)
             torch.cuda.manual_seed(random_seed)
-
-    def load_action_mappings(self, action_mappings_matrix):
-        config = self.config
-        action_mapping_file = config['action_mappings_matrix']
-        if action_mappings_matrix is not None:
-            self.action_mappings = action_mappings_matrix
-        elif os.path.exists(action_mapping_file):
-            with open(config['action_mappings_matrix'], 'rb') as f:
-                self.action_mappings = np.load(f)
-        else:
-            self.action_mappings = create_action_mappings(self.env, self.all_actions, config["selected_action_types"])
-            np.save(action_mapping_file, self.action_mappings)
 
     def create_replay_buffer(self):
         self.memory = ReplayBuffer(self.config["buffer_size"], self.config["batch_size"],

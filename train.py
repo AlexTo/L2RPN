@@ -10,7 +10,7 @@ def train(env, conf):
 
 
 if __name__ == "__main__":
-    with open('config.json') as json_file:
+    with open('data/config.json') as json_file:
         config = json.load(json_file)
 
     environment = create_env(config["env"], config["seed"])
