@@ -35,7 +35,7 @@ class BeUAgent(AgentWithConverter):
         # self.action_space.filter_action(self.filter_action)
         self.all_actions = np.array(self.action_space.all_actions)
 
-        self.action_mappings = torch.tensor(action_mappings_matrix, dtype=torch.long).to(self.device)
+        self.action_mappings = torch.tensor(action_mappings_matrix, dtype=torch.float).to(self.device)
 
         self.observation_space = env.observation_space
         set_random_seeds(env, config["seed"])
@@ -64,12 +64,20 @@ class BeUAgent(AgentWithConverter):
         self.eps_num = 0
         self.global_step_number = 0
 
+    def t(self, tensor, dtype=torch.float):
+        if type(tensor) is np.ndarray:
+            tensor = torch.from_numpy(tensor).to(dtype).to(self.device)
+        if len(tensor.shape) == 1:
+            tensor = tensor.unsqueeze(0)
+        return tensor
+
     def convert_obs(self, s, obs_is_vect=False):
         return convert_obs(self.observation_space, s, self.config["selected_attributes"],
-                           self.config["attribute_scalers"], obs_is_vect)
+                           self.config["feature_scalers"], obs_is_vect)
 
     def time_to_learn(self):
-        return self.global_step_number % self.config["update_every_n_steps"] == 0
+        return len(self.memory) > self.config["batch_size"] \
+               and self.global_step_number % self.config["update_every_n_steps"] == 0
 
     def train(self):
         while self.eps_num < self.config["train_num_episodes"]:
@@ -90,11 +98,12 @@ class BeUAgent(AgentWithConverter):
 
             while not done:
                 eps_step += 1
-                s = self.convert_obs(s)
-                encoded_act = self.actor_pick_act(s, eval_ep)
+                s_vect = self.convert_obs(s)
+                encoded_act = self.actor_pick_act(s_vect, eval_ep)
                 act = self.convert_act(encoded_act)
                 s2, r, done, info = self.env.step(act)
-                s2 = self.convert_obs(s2)
+                s2_vect = self.convert_obs(s2)
+
                 eps_r += r
                 if self.time_to_learn():
                     for _ in range(self.config["updates_per_learning_session"]):
@@ -105,7 +114,7 @@ class BeUAgent(AgentWithConverter):
                     else:
                         r = 10
                 if not eval_ep:
-                    self.save_exp(experience=(s, encoded_act, r, s2, done))
+                    self.save_exp(experience=(s_vect, encoded_act, r, s2_vect, done))
                 s = s2
                 self.global_step_number += 1
 
@@ -139,37 +148,6 @@ class BeUAgent(AgentWithConverter):
     def my_act(self, transformed_observation, reward, done=False):
         pass
 
-    def try_reconnect_power_line(self, s):
-
-        act = None
-
-        zero_rhos = np.where(s.rho <= 0)[0]
-
-        for line_id in zero_rhos:
-            if line_id in self.episode_broken_lines:
-                self.episode_broken_lines[line_id] += 1
-                if self.episode_broken_lines[line_id] > 10:
-                    self.episode_broken_lines[line_id] = 10
-            else:
-                self.episode_broken_lines[line_id] = 1
-
-        for line_id in self.episode_broken_lines:
-            if line_id not in zero_rhos:
-                self.episode_broken_lines[line_id] = 0
-
-        for line in self.episode_broken_lines:
-            timesteps_after_broken = self.episode_broken_lines[line]
-            if timesteps_after_broken == 10 and s.time_before_cooldown_line[line] == 0:
-                for o, e in [(1, 1), (1, 2), (2, 1), (2, 2)]:
-                    propose_act = self.action_space.reconnect_powerline(line_id=line, bus_or=o, bus_ex=e)
-                    sim_obs, sim_reward, sim_done, info = s.simulate(propose_act)
-                    if not sim_done:
-                        act = propose_act
-                        break
-                self.episode_broken_lines[line] = 0
-                break
-        return act
-
     def actor_pick_act(self, s, eval_ep=False):
         if not eval_ep:
             act, _, _ = self.forward(s)
@@ -179,18 +157,6 @@ class BeUAgent(AgentWithConverter):
         act = act.detach().cpu().numpy()
         return act[0]
 
-    def log(self, eps_r, eps_step, info):
-        self.expected_return += (eps_r - self.expected_return) / (
-                self.eps_num / self.eval_freq)
-        if len(info["exception"]) > 0:
-            self.failed_episodes += 1
-        else:
-            self.completed_episodes += 1
-        self.log_metric('expected return', self.expected_return)
-        self.log_metric('episode reward', eps_r)
-        self.log_metric("number of steps completed", eps_step)
-        self.log_metric('number of episodes completed', self.completed_episodes)
-
     def sample_experiences(self):
         return self.memory.sample()
 
@@ -198,13 +164,11 @@ class BeUAgent(AgentWithConverter):
         s, a, r, s2, done = experience
         self.memory.add_experience(s, a, r, s2, done)
 
-    def init_graph(self):
-        # TODO: create graph neural net (GNN) from environment observation space
-        pass
-
     def forward(self, s):
         """Given the state, produces an action, the probability of the action, the log probability of the action, and
         the argmax action"""
+        s = self.t(s)
+
         act_probs = self.actor(s)
         max_prob_act = torch.argmax(act_probs, dim=-1)
         act_dist = Categorical(act_probs)
@@ -219,9 +183,7 @@ class BeUAgent(AgentWithConverter):
         """Calculates the losses for the two critics. This is the ordinary Q-learning loss except the additional entropy
          term is taken into account"""
         with torch.no_grad():
-            act, (
-                act_probs, log_probs), _ = self.forward(
-                bs2)
+            act, (act_probs, log_probs), _ = self.forward(bs2)
             qf1_next_target = self.critic_target_1(bs2)
             qf2_next_target = self.critic_target_2(bs2)
             min_qf_next_target = act_probs * (
@@ -235,11 +197,11 @@ class BeUAgent(AgentWithConverter):
         qf2_loss = F.mse_loss(qf2, next_q_value)
         return qf1_loss, qf2_loss
 
-    def calc_actor_loss(self, state_batch):
+    def calc_actor_loss(self, bs):
         """Calculates the loss for the actor. This loss includes the additional entropy term"""
-        act, (act_probs, log_probs), _ = self.forward(state_batch)
-        qf1_pi = self.critic_1(state_batch)
-        qf2_pi = self.critic_2(state_batch)
+        act, (act_probs, log_probs), _ = self.forward(bs)
+        qf1_pi = self.critic_1(bs)
+        qf2_pi = self.critic_2(bs)
         min_qf_pi = torch.min(qf1_pi, qf2_pi)
         inside_term = self.alpha * log_probs - min_qf_pi
         policy_loss = (act_probs * inside_term).sum(dim=1).mean()
@@ -251,10 +213,6 @@ class BeUAgent(AgentWithConverter):
         is True."""
         alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
         return alpha_loss
-
-    def log_metric(self, metric_name, metric):
-        if self.config["neptune_enabled"]:
-            self.neptune.log_metric(metric_name, metric)
 
     def update_critics(self, critic_loss_1, critic_loss_2):
         """Updates the parameters for the actor, both critics and (if specified) the temperature parameter"""
@@ -305,3 +263,19 @@ class BeUAgent(AgentWithConverter):
         self.critic_target_1.load_state_dict(chk_point["critic_target"])
         self.critic_target_2.load_state_dict(chk_point["critic_target_2"])
         self.actor.load_state_dict(chk_point["actor_local"])
+
+    def log_metric(self, metric_name, metric):
+        if self.config["neptune_enabled"]:
+            self.neptune.log_metric(metric_name, metric)
+
+    def log(self, eps_r, eps_step, info):
+        self.expected_return += (eps_r - self.expected_return) / (
+                self.eps_num / self.eval_freq)
+        if len(info["exception"]) > 0:
+            self.failed_episodes += 1
+        else:
+            self.completed_episodes += 1
+        self.log_metric('expected return', self.expected_return)
+        self.log_metric('episode reward', eps_r)
+        self.log_metric("number of steps completed", eps_step)
+        self.log_metric('number of episodes completed', self.completed_episodes)
