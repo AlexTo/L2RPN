@@ -10,10 +10,10 @@
   "train_num_episodes": 50000,
   "batch_size": 64,
   "discount_rate": 0.99,
-  "buffer_size": 1000000,
+  "buffer_size": 600000,
   "state_size": 13065,
-  "num_experience_gen": 800000,
-  "num_experience_gen_processes": 16,
+  "num_experience_gen": 500000,
+  "num_experience_gen_processes": 8,
   "Actor": {
     "hidden_layers": [
       1024,

@@ -8,7 +8,8 @@ import joblib
 import numpy as np
 from grid2op.Converter import IdToAct
 
-from beu_l2rpn.utils import create_action_mappings, create_env
+from beu_l2rpn.data_structures import ReplayBuffer
+from beu_l2rpn.utils import create_action_mappings, create_env, convert_obs
 
 
 def gen_experience(rank, config, num_exp):
@@ -52,23 +53,54 @@ if __name__ == '__main__':
     with open("data/config.json", 'r') as f:
         config = json.load(f)
 
-    if not os.path.exists(os.path.join("data", f"{config['env']}_action_space.npy")):
-        env = create_env(config["env"], config["seed"])
-        action_space = IdToAct(env.action_space)
-        action_space.init_converter()
-        action_space.save("data", f"{config['env']}_action_space.npy")
+    env = create_env(config["env"], config["seed"])
 
-    if not os.path.exists(os.path.join("data", f"{config['env']}_action_mappings.npy")):
-        action_mappings = create_action_mappings(env, action_space.all_actions, config["selected_action_types"])
-        np.save(os.path.join("data", f"{config['env']}_action_mappings.npy"), action_mappings.T)
+    # if not os.path.exists(os.path.join("data", f"{config['env']}_action_space.npy")):
+    #     action_space = IdToAct(env.action_space)
+    #     action_space.init_converter()
+    #     action_space.save("data", f"{config['env']}_action_space.npy")
+    #
+    # if not os.path.exists(os.path.join("data", f"{config['env']}_action_mappings.npy")):
+    #     action_mappings = create_action_mappings(env, action_space.all_actions, config["selected_action_types"])
+    #     np.save(os.path.join("data", f"{config['env']}_action_mappings.npy"), action_mappings.T)
+    #
+    # num_exp = config["num_experience_gen"]
+    #
+    # processes = []
+    # for i in range(config["num_experience_gen_processes"]):
+    #     p = Process(target=gen_experience, args=(i, config, num_exp / config["num_experience_gen_processes"]))
+    #     p.start()
+    #     processes.append(p)
+    #
+    # for p in processes:
+    #     p.join()
 
-    num_exp = config["num_experience_gen"]
+    print("Converting obs vectors and merging files...")
 
-    processes = []
-    for i in range(config["num_experience_gen_processes"]):
-        p = Process(target=gen_experience, args=(i, config, num_exp / config["num_experience_gen_processes"]))
-        p.start()
-        processes.append(p)
+    replay_buffer = ReplayBuffer(config["buffer_size"], config["batch_size"], config["seed"])
 
-    for p in processes:
-        p.join()
+    i = int(0)
+    num_experiences = 0
+    while True:
+        exp_file = os.path.join("data", f"{config['env']}_replay_buffer_{i}.pickle")
+        if os.path.exists(exp_file):
+            print(f"Reading {exp_file}")
+            with open(exp_file, 'rb') as f:
+                expriences = joblib.load(f)
+                for exp in expriences:
+                    s, a, r, s2, done = exp
+
+                    # convert vector
+                    s = convert_obs(env.observation_space, s, config["selected_attributes"], config["feature_scalers"],
+                                    True)
+                    s2 = convert_obs(env.observation_space, s2, config["selected_attributes"],
+                                     config["feature_scalers"], True)
+                    replay_buffer.add_experience(s, a, r, s2, done)
+                    num_experiences += 1
+                    if num_experiences % 1000 == 0:
+                        print(f"Converted and merged {num_experiences} experiences")
+
+        else:
+            break
+        i += 1
+    replay_buffer.save(os.path.join("data", f"{config['env']}_replay_buffer.pickle"))
