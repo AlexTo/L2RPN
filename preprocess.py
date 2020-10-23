@@ -55,25 +55,24 @@ if __name__ == '__main__':
 
     env = create_env(config["env"], config["seed"])
 
-    # if not os.path.exists(os.path.join("data", f"{config['env']}_action_space.npy")):
-    #     action_space = IdToAct(env.action_space)
-    #     action_space.init_converter()
-    #     action_space.save("data", f"{config['env']}_action_space.npy")
-    #
-    # if not os.path.exists(os.path.join("data", f"{config['env']}_action_mappings.npy")):
-    #     action_mappings = create_action_mappings(env, action_space.all_actions, config["selected_action_types"])
-    #     np.save(os.path.join("data", f"{config['env']}_action_mappings.npy"), action_mappings.T)
-    #
-    # num_exp = config["num_experience_gen"]
-    #
-    # processes = []
-    # for i in range(config["num_experience_gen_processes"]):
-    #     p = Process(target=gen_experience, args=(i, config, num_exp / config["num_experience_gen_processes"]))
-    #     p.start()
-    #     processes.append(p)
-    #
-    # for p in processes:
-    #     p.join()
+    if not os.path.exists(os.path.join("data", f"{config['env']}_action_space.npy")):
+        action_space = IdToAct(env.action_space)
+        action_space.init_converter()
+        action_space.save("data", f"{config['env']}_action_space.npy")
+
+    if not os.path.exists(os.path.join("data", f"{config['env']}_action_mappings.npy")):
+        action_mappings = create_action_mappings(env, action_space.all_actions, config["selected_action_types"])
+        np.save(os.path.join("data", f"{config['env']}_action_mappings.npy"), action_mappings.T)
+
+    num_exp = config["num_experience_gen"]
+
+    processes = []
+    for i in range(config["num_experience_gen_processes"]):
+        p = Process(target=gen_experience, args=(i, config, num_exp / config["num_experience_gen_processes"]))
+        p.start()
+        processes.append(p)
+    for p in processes:
+        p.join()
 
     print("Converting obs vectors and merging files...")
 
