@@ -75,7 +75,7 @@ class Net(nn.Module, ABC):
 
 
 class Agent(mp.Process):
-    def __init__(self, global_net, opt, global_ep, global_ep_r, res_queue, rank, config, log_queue, action_mappings, action_line_mappings):
+    def __init__(self, global_net, opt, global_ep, global_step, global_ep_r, res_queue, global_num_candidate_acts, rank, config, log_queue, action_mappings, action_line_mappings):
         super(Agent, self).__init__()
         self.rank = rank
         self.seed = config["seed"] + rank
@@ -88,7 +88,8 @@ class Agent(mp.Process):
         self.config = config
         self.state_size = config["state_size"]
         self.name = 'w%02i' % rank
-        self.g_ep, self.g_ep_r, self.res_queue = global_ep, global_ep_r, res_queue
+        self.g_ep, self.g_step, self.g_ep_r, self.res_queue, self.g_num_candidate_acts = global_ep, global_step, global_ep_r, res_queue, global_num_candidate_acts
+
         self.global_net, self.opt = global_net, opt
 
         self.num_episodes = config["num_episodes"]
@@ -138,8 +139,9 @@ class Agent(mp.Process):
             buffer_s, buffer_a, buffer_r = [], [], []
             ep_r = 0.
             ep_step = 0
+            ep_agent_num_acts = 0
             while True:
-                lines_overload = obs.rho > 0.85
+                lines_overload = obs.rho > config["danger_threshold"]
                 if not np.any(lines_overload):
                     choosen_actions = np.array([0])
                 else:
@@ -149,7 +151,8 @@ class Agent(mp.Process):
                         1, -1), self.action_line_mappings)
                     attention[attention > 1] = 1
                     choosen_actions = self.local_net.choose_action(
-                        s, attention, 6)
+                        s, attention, self.g_num_candidate_acts.value)
+                    ep_agent_num_acts += 1
 
                 obs_previous = obs
                 a, obs_forecasted, obs_do_nothing = forecast_actions(
@@ -179,14 +182,14 @@ class Agent(mp.Process):
                         buffer_a = cuda(self.gpu_id, torch.tensor(
                             buffer_a, dtype=torch.long))
                         buffer_s = cuda(self.gpu_id, torch.cat(buffer_s))
-                        push_and_pull(self.opt, self.local_net, check_point_episodes, check_point_folder, self.g_ep, l_ep, self.name,
-                                      self.rank, self.global_net, done, s_, buffer_s, buffer_a, buffer_r, self.gamma, self.gpu_id)
+                        push_and_pull(self.opt, self.local_net, check_point_episodes, check_point_folder, self.g_ep, l_ep,
+                                      self.name, self.rank, self.global_net, done, s_, buffer_s, buffer_a, buffer_r, self.gamma, self.gpu_id)
 
                     buffer_s, buffer_a, buffer_r = [], [], []
 
                     if done:  # done and print information
-                        record(self.g_ep, self.g_ep_r, ep_r,
-                               self.res_queue, self.name, ep_step)
+                        record(config["starting_num_candidate_acts"], config["num_candidate_acts_decay_iter"], self.g_ep, self.g_step, self.g_num_candidate_acts,
+                               self.g_ep_r, ep_r, self.res_queue, self.name, ep_step, ep_agent_num_acts)
                         break
                 s = s_
                 total_step += 1

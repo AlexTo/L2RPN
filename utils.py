@@ -3,6 +3,7 @@ import logging
 import os
 import random
 import time
+import math
 from logging.handlers import QueueHandler, QueueListener
 
 import grid2op
@@ -72,7 +73,7 @@ def cuda(gpu_id, obj):
             return obj.cuda()
 
 
-def push_and_pull(opt, local_net, check_point_episodes, check_point_folder, global_ep, l_ep, name, rank, global_net, done, s_, bs, ba, br, gamma, gpu_id=-1):
+def push_and_pull(opt, local_net, check_point_episodes, check_point_folder, g_ep, l_ep, name, rank, global_net, done, s_, bs, ba, br, gamma, gpu_id=-1):
     if done:
         v_s_ = 0.  # terminal
     else:
@@ -105,15 +106,24 @@ def push_and_pull(opt, local_net, check_point_episodes, check_point_folder, glob
     # pull global parameters
     local_net.load_state_dict(global_net.state_dict())
     if done:
-        with global_ep.get_lock():
-            if global_ep.value > 0 and global_ep.value % check_point_episodes == 0:
+        with g_ep.get_lock():
+            if g_ep.value > 0 and g_ep.value % check_point_episodes == 0:
                 torch.save(global_net.state_dict(),
-                           f"{check_point_folder}/model_{int(time.time())}_gep_{global_ep.value}_w{rank}_{l_ep}_.pth")
+                           f"{check_point_folder}/model_{int(time.time())}_gep_{g_ep.value}_w{rank}_{l_ep}_.pth")
 
 
-def record(global_ep, global_ep_r, ep_r, res_queue, name, ep_step):
+def record(starting_num_candidate_acts, num_candidate_acts_decay_iter, global_ep, global_step, global_num_candidate_acts, global_ep_r, ep_r, res_queue, name,
+           ep_step, ep_agent_num_acts):
+    with global_step.get_lock():
+        global_step.value += ep_step
+        with global_num_candidate_acts.get_lock():
+            global_num_candidate_acts.value = starting_num_candidate_acts - \
+                math.floor(global_step.value / num_candidate_acts_decay_iter)
+            if global_num_candidate_acts.value < 1:
+                global_num_candidate_acts.value = 1
     with global_ep.get_lock():
         global_ep.value += 1
+
     with global_ep_r.get_lock():
         if global_ep_r.value == 0.:
             global_ep_r.value = ep_r
@@ -128,7 +138,9 @@ def record(global_ep, global_ep_r, ep_r, res_queue, name, ep_step):
     )
     logging.info(f"{name}_eps_reward|||{ep_r}")
     logging.info(f"{name}_eps_steps|||{ep_step}")
+    logging.info(f"{name}_eps_agent_num_acts|||{ep_agent_num_acts}")
     logging.info(f"global_expected_returns|||{global_ep_r.value}")
+    logging.info(f"num_candidate_acts|||{global_num_candidate_acts.value}")
 
 
 def shuffle(x):

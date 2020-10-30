@@ -58,13 +58,14 @@ def train():
     opt = SharedAdam(global_net.parameters(),
                      lr=config["learning_rate"])  # global optimizer
 
-    global_ep, global_ep_r, res_queue = mp.Value(
-        'i', 0), mp.Value('d', 0.), mp.Queue()
+    global_step, global_ep, global_ep_r, res_queue, g_num_candidate_acts = mp.Value('i', 0), mp.Value(
+        'i', 0), mp.Value('d', 0.), mp.Queue(), mp.Value('d', config["starting_num_candidate_acts"])
 
     agents = [
-        Agent(global_net=global_net, opt=opt, global_ep=global_ep, global_ep_r=global_ep_r, res_queue=res_queue,
-              rank=i, config=config, log_queue=log_queue,
-              action_mappings=action_mappings_tensors[i % len(config["gpu_ids"])], 
+        Agent(global_net=global_net, opt=opt, global_ep=global_ep, global_step=global_step, global_ep_r=global_ep_r, res_queue=res_queue,
+              global_num_candidate_acts=g_num_candidate_acts, rank=i, config=config, log_queue=log_queue,
+              action_mappings=action_mappings_tensors[i % len(
+                  config["gpu_ids"])],
               action_line_mappings=action_line_mappings_tensors[i % len(config["gpu_ids"])])
 
         for i in range(config["num_workers"])]
