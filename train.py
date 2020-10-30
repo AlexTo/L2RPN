@@ -56,6 +56,10 @@ def train():
 
     global_net = Net(state_size, torch.tensor(action_mappings, requires_grad=False),
                      torch.tensor(action_line_mappings, requires_grad=False))
+
+    if os.path.exists(config["load_model"]):
+        global_net.load_state_dict(torch.load(config["load_model"]))
+
     global_net.share_memory()
     opt = SharedAdam(global_net.parameters(),
                      lr=config["learning_rate"])  # global optimizer

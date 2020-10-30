@@ -15,3 +15,4 @@ check_points
 *.npy
 .vscode
 *.pth
+eval_results
