@@ -26,6 +26,8 @@ def evaluate(env,
     with open(os.path.join("data", "config.json"), 'r') as f:
         config = json.load(f)
 
+    env.seed(config["seed"])
+
     env_name = config["env"]
 
     with open(os.path.join("data", f"{env_name}_action_mappings.npz"), 'rb') as f:

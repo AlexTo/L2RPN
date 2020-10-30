@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from grid2op.Agent import BaseAgent
 from .expert_rules import expert_rules
 
+
 class Net(nn.Module):
     def __init__(self, state_size, action_mappings, action_line_mappings):
         super(Net, self).__init__()
@@ -52,23 +53,18 @@ class Agent(BaseAgent):
         self.net = Net(self.state_size, self.action_mappings,
                        self.action_line_mappings)
         self.ep_step = 0
-        self.line_id = None
 
     def reset(self, obs):
         self.maintenance_list = obs.time_next_maintenance + obs.duration_next_maintenance
         self.ep_step = 0
-        self.line_id = None
 
     def act(self, obs, reward, done):
 
-        if self.line_id is not None:
-            print(f"Line {self.line_id} is now {obs.line_status[self.line_id]}")
-
-        expert_act, line_id = expert_rules(
+        expert_act = expert_rules(
             self.maintenance_list, self.ep_step, self.action_space, obs)
-        self.line_id = line_id
 
         if expert_act is not None:
+            self.ep_step += 1
             return expert_act
 
         rho = obs.rho.copy()
