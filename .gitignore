@@ -13,5 +13,5 @@ ignore*
 
 check_points
 *.npy
-*.gz
-*.pickle
+.vscode
+*.pth

@@ -2,6 +2,7 @@
   "env": "l2rpn_neurips_2020_track2_small",
   "seed": 2020,
   "use_gpu": true,
+<<<<<<< HEAD
   "check_point_folder": "check_points",
   "check_point_episodes": 100,
   "neptune_enabled": false,
@@ -45,15 +46,46 @@
     "force_line_reconnect": true,
     "force_line_disconnect": true,
     "switch_bus": true,
+=======
+  "neptune_enabled": true,
+  "neptune_api_token": "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vdWkubmVwdHVuZS5haSIsImFwaV91cmwiOiJodHRwczovL3VpLm5lcHR1bmUuYWkiLCJhcGlfa2V5IjoiNDM1ZmEwZWUtYmQ0Ni00NmJiLWE1ZTUtMTgzMDJhNDU5MjIwIn0=",
+  "neptune_project_name": "l2rpn/l2rpn",
+  "check_point_folder": "check_points",
+  "check_point_episodes": 100,
+  "num_episodes": 1000000,
+  "num_workers": 4,
+  "gpu_ids": [
+    0
+  ],
+  "gamma": 0.99,
+  "danger_threshold": 0.9,
+  "starting_num_candidate_acts": 8,
+  "num_candidate_acts_decay_iter": 1000000,
+  "learning_rate": 0.00001,
+  "update_global_iter": 24,
+  "state_size": 13108,
+  "selected_action_types": {
+    "switch_line": false,
+    "force_line_reconnect": true,
+    "force_line_disconnect": false,
+    "switch_bus": false,
+>>>>>>> a3c_v3
     "set_bus": true,
     "redispatch": true
   },
   "selected_attributes": {
     "year": false,
+<<<<<<< HEAD
     "month": false,
     "day": false,
     "day_of_week": false,
     "hour_of_day": false,
+=======
+    "month": true,
+    "day": false,
+    "day_of_week": true,
+    "hour_of_day": true,
+>>>>>>> a3c_v3
     "minute_of_hour": false,
     "prod_p": true,
     "prod_q": true,
@@ -82,11 +114,19 @@
   },
   "feature_scalers": {
     "year": 2000,
+<<<<<<< HEAD
     "month": 12,
     "day": 30,
     "day_of_week": 7,
     "hour_of_day": 24,
     "minute_of_hour": 60,
+=======
+    "month": 1,
+    "day": 1,
+    "day_of_week": 1,
+    "hour_of_day": 1,
+    "minute_of_hour": 1,
+>>>>>>> a3c_v3
     "prod_p": 100,
     "prod_q": 100,
     "prod_v": 100,
@@ -112,4 +152,8 @@
     "actual_dispatch": 1,
     "target_dispatch": 1
   }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> a3c_v3
