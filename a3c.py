@@ -19,7 +19,7 @@ from grid2op.Environment import MultiMixEnvironment
 from setproctitle import setproctitle as ptitle
 from torch.distributions import Binomial
 
-from utils import v_wrap, set_init, push_and_pull, record, convert_obs, create_env, cuda, setup_worker_logging, lreward, forecast
+from utils import v_wrap, set_init, push_and_pull, record, convert_obs, create_env, cuda, setup_worker_logging, lreward, forecast, forecast_actions
 
 
 class Net(nn.Module, ABC):
@@ -53,12 +53,12 @@ class Net(nn.Module, ABC):
         values = self.v3(v2)
         return logits, values
 
-    def choose_action(self, s, attention):
+    def choose_action(self, s, attention, k=1):
         self.eval()
         logits, _ = self.forward(s)
         prob = F.softmax(logits * attention, dim=1).data
         m = self.distribution(prob)
-        return m.sample().cpu().numpy()[0]
+        return np.unique(m.sample([k]).cpu().numpy())
 
     def loss_func(self, s, a, v_t):
         self.train()
@@ -141,21 +141,24 @@ class Agent(mp.Process):
             while True:
                 lines_overload = obs.rho > 0.85
                 if not np.any(lines_overload):
-                    a = 0
+                    choosen_actions = np.array([0])
                 else:
-                    lines_overload = cuda(self.gpu_id, torch.tensor(lines_overload.astype(int)).float())
-                    attention = torch.matmul(lines_overload.reshape(1, -1), self.action_line_mappings)
+                    lines_overload = cuda(self.gpu_id, torch.tensor(
+                        lines_overload.astype(int)).float())
+                    attention = torch.matmul(lines_overload.reshape(
+                        1, -1), self.action_line_mappings)
                     attention[attention > 1] = 1
-                    a = self.local_net.choose_action(s, attention)
-                
-                act = self.action_space.convert_act(a)
+                    choosen_actions = self.local_net.choose_action(
+                        s, attention, 6)
 
                 obs_previous = obs
-                obs_do_nothing, obs_forecasted = forecast(act, self.env, obs)
-
-                obs, r, done, info = self.env.step(act)
+                a, obs_forecasted, obs_do_nothing = forecast_actions(
+                    choosen_actions, self.action_space, obs)
 
                 logging.info(f"{self.name}_act|||{a}")
+                act = self.action_space.convert_act(a)
+
+                obs, r, done, info = self.env.step(act)
 
                 r = lreward(
                     a, self.env, obs_previous, obs_do_nothing, obs_forecasted, obs, done, info)
@@ -172,7 +175,7 @@ class Agent(mp.Process):
                 if total_step % self.update_global_iter == 0 or done:  # update global and assign to local net
                     # sync
 
-                    if len(buffer_r) > 0:
+                    if len(buffer_r) > 0 and np.mean(np.abs(buffer_r)) > 0:
                         buffer_a = cuda(self.gpu_id, torch.tensor(
                             buffer_a, dtype=torch.long))
                         buffer_s = cuda(self.gpu_id, torch.cat(buffer_s))

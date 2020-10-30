@@ -72,7 +72,7 @@ def cuda(gpu_id, obj):
             return obj.cuda()
 
 
-def push_and_pull(opt, local_net, check_point_episodes, check_point_folder, global_ep, l_ep, name, rank, global_net, done, s_, bs, ba, br, bsi, gamma, gpu_id=-1):
+def push_and_pull(opt, local_net, check_point_episodes, check_point_folder, global_ep, l_ep, name, rank, global_net, done, s_, bs, ba, br, gamma, gpu_id=-1):
     if done:
         v_s_ = 0.  # terminal
     else:
@@ -86,7 +86,7 @@ def push_and_pull(opt, local_net, check_point_episodes, check_point_folder, glob
 
     buffer_v_target = cuda(gpu_id, v_wrap(np.array(buffer_v_target)[:, None]))
 
-    loss, a_loss, c_loss = local_net.loss_func(bs, ba, buffer_v_target, bsi)
+    loss, a_loss, c_loss = local_net.loss_func(bs, ba, buffer_v_target)
     logging.info(f"{name}_actor_loss|||{a_loss.item()}")
     logging.info(f"{name}_critic_loss|||{c_loss.item()}")
     # calculate local gradients and push local parameters to global
@@ -227,9 +227,10 @@ def set_random_seeds(seed):
 
 
 def create_action_mappings(env, all_actions, selected_action_types):
-    action_mappings = []
-    
-    for i, act in enumerate(all_actions):
+    action_tensors = []
+    i = 0
+    for act in all_actions:
+
         impacts = act.impact_on_objects()
         action_tensor = []
         if selected_action_types["switch_line"]:
@@ -294,11 +295,12 @@ def create_action_mappings(env, all_actions, selected_action_types):
         if i == 0:
             action_tensor = 1 - action_tensor
         action_tensor = action_tensor / action_tensor.sum()
-        action_mappings.append(action_tensor)
+        action_tensors.append(action_tensor)
+        i += 1
         if i % 1000 == 0:
             print(f"Action mappings: Processed {i} actions")
 
-    return np.array(action_mappings)
+    return np.array(action_tensors)
 
 
 def create_action_line_mappings(env, all_actions):
@@ -317,6 +319,7 @@ def create_action_line_mappings(env, all_actions):
         if i % 1000 == 0:
             print(f"Action line mappings: Processed {i} actions")
     return action_line_mappings
+
 
 TRIVIAL = "Trivial"
 GOOD = "Good"
@@ -367,30 +370,69 @@ def transform_rho(rho, min_threshold=0.02, normalised=True):
     rho_t[rho_t == 0.0] = 1.01
     rho_t[rho_t > 1.0] = 1.01
     rho_t[rho_t < min_threshold] = 0.02
-    rho_t_ = -np.log(1.02 - rho_t)
-    return rho_t if not normalised else (rho_t / 5.0)
+    rho_t = -np.log(1.02 - rho_t)
+    return rho_t if not normalised else (rho_t / -np.log(0.01))
+
+
+def compute_impact(rho1, rho2, min_threshold=0.02, normalised=True, eps=0.0000001):
+    impact = transform_rho(rho1, min_threshold, normalised) - \
+        transform_rho(rho2, min_threshold, normalised)
+    return impact.sum() / ((impact != 0).sum() + eps)
+
+
+def forecast_actions(actions, action_space, obs, min_threshold=0.8, normalised=True):
+    try:
+        obs_do_nothing, _, done_do_nothing, _ = obs.simulate(
+            action_space.convert_act(0))
+    except:
+        obs_do_nothing = obs
+
+    if done_do_nothing:
+        obs_do_nothing = obs
+
+    best_action = 0
+    best_impact = 0
+    best_obs = obs_do_nothing
+
+    for action in actions[actions > 0]:
+        try:
+            obs_forecasted, _, done_forecasted, _ = obs.simulate(
+                action_space.convert_act(action))
+        except:
+            obs_forecasted = obs_do_nothing
+
+        if done_forecasted:
+            obs_forecasted = obs_do_nothing
+
+        impact = compute_impact(obs_forecasted.rho, obs_do_nothing.rho,
+                                min_threshold=min_threshold, normalised=normalised)
+
+        if impact < best_impact:
+            best_action = action
+            best_impact = impact
+            best_obs = obs_forecasted
+
+    return best_action, best_obs, obs_do_nothing
 
 
 def lreward(action, env, obs_previous, obs_do_nothing, obs_forecasted, obs_current, done, info,
-            threshold_trivial=0.002, threshold_safe=0.85, eps=0.000001):
+            threshold_trivial=0.0, threshold_safe=0.8, eps=0.000001):
 
-    rho_previous = transform_rho(obs_previous.rho, min_threshold=0.8)
-    rho_forecasted = transform_rho(obs_forecasted.rho, min_threshold=0.8)
-    rho_do_nothing = transform_rho(obs_do_nothing.rho, min_threshold=0.8)
-    rho_current = transform_rho(obs_current.rho, min_threshold=0.8)
-
-    action_impact = rho_forecasted - rho_do_nothing
-    situation_impact = rho_current - rho_forecasted
-    outcome_impact = rho_current - rho_previous
+    action_impact = compute_impact(
+        obs_forecasted.rho, obs_do_nothing.rho, min_threshold=threshold_safe)
+    situation_impact = compute_impact(
+        obs_current.rho, obs_forecasted.rho, min_threshold=threshold_safe)
+    outcome_impact = compute_impact(
+        obs_current.rho, obs_do_nothing.rho, min_threshold=threshold_safe)
 
     if done:
-        r = -1.0 if len(info["exception"]) > 0 else 0.0001
+        r = -0.02 if len(info["exception"]) > 0 else threshold_trivial
     else:
         r = -np.mean(outcome_impact) if np.mean(np.abs(action_impact)
-                                                ) > 0.0001 else 0.0001
+                                                ) > threshold_trivial else threshold_trivial
 
-    print("act:{},r: {},action[rho=({:f},{:f},{:f})],situation[rho=({:f},{:f},{:f})],outcome[rho=({:f},{:f},{:f})]".
-          format(action, r, np.min(action_impact), np.mean(action_impact), np.max(action_impact), np.min(situation_impact), np.mean(situation_impact),
-                 np.max(situation_impact), np.min(outcome_impact), np.mean(outcome_impact), np.max(outcome_impact)))
+    # print("act:{},r: {},action[rho=({:f},{:f},{:f})],situation[rho=({:f},{:f},{:f})],outcome[rho=({:f},{:f},{:f})]".
+    #      format(action, r, np.min(action_impact), np.mean(action_impact), np.max(action_impact), np.min(situation_impact), np.mean(situation_impact),
+    #             np.max(situation_impact), np.min(outcome_impact), np.mean(outcome_impact), np.max(outcome_impact)))
 
-    return r, situation_impact
+    return r
