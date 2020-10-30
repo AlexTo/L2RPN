@@ -88,8 +88,8 @@ def push_and_pull(opt, local_net, check_point_episodes, check_point_folder, g_ep
     buffer_v_target = cuda(gpu_id, v_wrap(np.array(buffer_v_target)[:, None]))
 
     loss, a_loss, c_loss = local_net.loss_func(bs, ba, buffer_v_target)
-    logging.info(f"{name}_actor_loss|||{a_loss.item()}")
-    logging.info(f"{name}_critic_loss|||{c_loss.item()}")
+    # logging.info(f"{name}_actor_loss|||{a_loss.item()}")
+    # logging.info(f"{name}_critic_loss|||{c_loss.item()}")
     # calculate local gradients and push local parameters to global
     opt.zero_grad()
     loss.backward()

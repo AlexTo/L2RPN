@@ -33,11 +33,13 @@ def train():
 
     state_size = config["state_size"]
 
-    with open(os.path.join("data", f"{config['env']}_action_mappings.npy"), 'rb') as f:
-        action_mappings = np.float32(np.load(f))
+    with open(os.path.join("data", f"{config['env']}_action_mappings.npz"), 'rb') as f:
+        archive = np.load(f)
+        action_mappings = np.float32(archive[archive.files[0]])
 
-    with open(os.path.join("data", f"{config['env']}_action_line_mappings.npy"), 'rb') as f:
-        action_line_mappings = np.float32(np.load(f))
+    with open(os.path.join("data", f"{config['env']}_action_line_mappings.npz"), 'rb') as f:
+        archive = np.load(f)
+        action_line_mappings = np.float32(archive[archive.files[0]])
 
     action_mappings_tensors = []
     action_line_mappings_tensors = []
@@ -59,7 +61,7 @@ def train():
                      lr=config["learning_rate"])  # global optimizer
 
     global_step, global_ep, global_ep_r, res_queue, g_num_candidate_acts = mp.Value('i', 0), mp.Value(
-        'i', 0), mp.Value('d', 0.), mp.Queue(), mp.Value('d', config["starting_num_candidate_acts"])
+        'i', 0), mp.Value('d', 0.), mp.Queue(), mp.Value('i', config["starting_num_candidate_acts"])
 
     agents = [
         Agent(global_net=global_net, opt=opt, global_ep=global_ep, global_step=global_step, global_ep_r=global_ep_r, res_queue=res_queue,

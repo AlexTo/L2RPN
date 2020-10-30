@@ -69,7 +69,8 @@ class Net(nn.Module, ABC):
         probs = F.softmax(logits, dim=1)
         m = self.distribution(probs)
         exp_v = m.log_prob(a) * td.detach().squeeze()
-        a_loss = -exp_v
+
+        a_loss = -exp_v + 0.01 * m.entropy
         total_loss = (c_loss + a_loss).mean()
         return total_loss, a_loss.mean(), c_loss.mean()
 
@@ -115,8 +116,10 @@ class Agent(mp.Process):
         self.env = create_env(config["env"], self.seed)
         observation_space = self.env.observation_space
         action_space = IdToAct(self.env.action_space)
-        action_space.init_converter(all_actions=os.path.join(
-            "data", f"{config['env']}_action_space.npy"))
+        with open(os.path.join("data", f"{config['env']}_action_space.npz"), 'rb') as f:
+            archive = np.load(f)
+            action_space.init_converter(all_actions=archive[archive.files[0]])
+
         self.action_space = action_space
         self.local_net = Net(
             self.state_size, self.action_mappings, self.action_line_mappings)  # local network

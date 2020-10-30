@@ -16,10 +16,10 @@ if __name__ == '__main__':
 
     selected_action_types = config["selected_action_types"]
 
-    if os.path.exists(os.path.join("data", f"{config['env']}_action_space.npy")):
+    if os.path.exists(os.path.join("data", f"{config['env']}_action_space.npz")):
         action_space = IdToAct(env.action_space)
         action_space.init_converter(all_actions=os.path.join(
-            "data", f"{config['env']}_action_space.npy"))
+            "data", f"{config['env']}_action_space.npz"))
     else:
         action_space = IdToAct(env.action_space)
         action_space.init_converter(
@@ -30,16 +30,20 @@ if __name__ == '__main__':
             change_bus_vect=selected_action_types["switch_bus"],
             redispatch=selected_action_types["redispatch"])
         action_space.filter_action(filter_action)
-        action_space.save("data", f"{config['env']}_action_space.npy")
 
-    if not os.path.exists(os.path.join("data", f"{config['env']}_action_mappings.npy")):
+        saved_npy = np.array([el.to_vect() for el in action_space.all_actions]).astype(
+            dtype=np.float32).reshape(action_space.n, -1)
+        np.savez_compressed(file=os.path.join(
+            "data", f"{config['env']}_action_space.npz"), arr=saved_npy)
+
+    if not os.path.exists(os.path.join("data", f"{config['env']}_action_mappings.npz")):
         action_mappings = create_action_mappings(
             env, action_space.all_actions, config["selected_action_types"])
-        np.save(os.path.join(
-            "data", f"{config['env']}_action_mappings.npy"), action_mappings.T)
+        np.savez_compressed(os.path.join(
+            "data", f"{config['env']}_action_mappings.npz"), action_mappings.T)
 
-    if not os.path.exists(os.path.join("data", f"{config['env']}_action_line_mappings.npy")):
+    if not os.path.exists(os.path.join("data", f"{config['env']}_action_line_mappings.npz")):
         action_line_mappings = create_action_line_mappings(
             env, action_space.all_actions)
-        np.save(os.path.join(
-            "data", f"{config['env']}_action_line_mappings.npy"), action_line_mappings.T)
+        np.savez_compressed(os.path.join(
+            "data", f"{config['env']}_action_line_mappings.npz"), action_line_mappings.T)
