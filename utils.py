@@ -113,7 +113,7 @@ def push_and_pull(opt, local_net, check_point_episodes, check_point_folder, g_ep
 
 
 def record(starting_num_candidate_acts, num_candidate_acts_decay_iter, global_ep, global_step, global_num_candidate_acts, global_ep_r, ep_r, res_queue, name,
-           ep_step, ep_agent_num_acts):
+           ep_step, ep_agent_num_dmd, ep_agent_num_acts):
     with global_step.get_lock():
         global_step.value += ep_step
         with global_num_candidate_acts.get_lock():
@@ -134,7 +134,9 @@ def record(starting_num_candidate_acts, num_candidate_acts_decay_iter, global_ep
         name,
         "Ep:", global_ep.value,
         "| Ep_r: %.0f" % global_ep_r.value,
-        f"| steps survived: {ep_step}"
+        f"| steps survived: {ep_step}",
+        f"| demands: {ep_agent_num_dmd}"
+        f"| acts: {ep_agent_num_acts}"
     )
     logging.info(f"{name}_eps_reward|||{ep_r}")
     logging.info(f"{name}_eps_steps|||{ep_step}")
@@ -428,20 +430,19 @@ def forecast_actions(actions, action_space, obs, min_threshold=0.9, normalised=T
 
 
 def lreward(action, env, obs_previous, obs_do_nothing, obs_forecasted, obs_current, done, info,
-            threshold_trivial=0.0, threshold_safe=0.9, eps=0.000001):
+            threshold_trivial=0.0, threshold_safe=0.95, eps=0.000001):
 
     action_impact = compute_impact(
         obs_forecasted.rho, obs_do_nothing.rho, min_threshold=threshold_safe)
     situation_impact = compute_impact(
         obs_current.rho, obs_forecasted.rho, min_threshold=threshold_safe)
     outcome_impact = compute_impact(
-        obs_current.rho, obs_do_nothing.rho, min_threshold=threshold_safe)
+        obs_current.rho, obs_previous.rho, min_threshold=threshold_safe)  # changed back to previous
 
     if done:
-        r = -0.02 if len(info["exception"]) > 0 else threshold_trivial
+        r = -0.1 if len(info["exception"]) > 0 else threshold_trivial
     else:
-        r = -np.mean(outcome_impact) if np.mean(np.abs(action_impact)
-                                                ) > threshold_trivial else threshold_trivial
+        r = -outcome_impact if action_impact < 0 else threshold_trivial
 
     # print("act:{},r: {},action[rho=({:f},{:f},{:f})],situation[rho=({:f},{:f},{:f})],outcome[rho=({:f},{:f},{:f})]".
     #      format(action, r, np.min(action_impact), np.mean(action_impact), np.max(action_impact), np.min(situation_impact), np.mean(situation_impact),

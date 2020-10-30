@@ -2,6 +2,7 @@
     "env": "l2rpn_neurips_2020_track2_small",
     "gamma": 0.99,
     "danger_threshold": 0.9,
+    "state_size": 13108,
     "selected_action_types": {
       "switch_line": false,
       "force_line_reconnect": true,
@@ -10,7 +11,6 @@
       "set_bus": true,
       "redispatch": true
     },
-    "state_size": 13108,
     "selected_attributes": {
       "year": false,
       "month": true,

@@ -16,3 +16,4 @@ check_points
 *.gz
 *.pickle
 .vscode
+*.pth

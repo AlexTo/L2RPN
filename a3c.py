@@ -18,6 +18,7 @@ from grid2op.Converter import IdToAct
 from grid2op.Environment import MultiMixEnvironment
 from setproctitle import setproctitle as ptitle
 from torch.distributions import Binomial
+from expert_rules import expert_rules
 
 from utils import v_wrap, set_init, push_and_pull, record, convert_obs, create_env, cuda, setup_worker_logging, lreward, forecast, forecast_actions
 
@@ -70,7 +71,7 @@ class Net(nn.Module, ABC):
         m = self.distribution(probs)
         exp_v = m.log_prob(a) * td.detach().squeeze()
 
-        a_loss = -exp_v + 0.01 * m.entropy
+        a_loss = -exp_v + 0.01 * m.entropy()
         total_loss = (c_loss + a_loss).mean()
         return total_loss, a_loss.mean(), c_loss.mean()
 
@@ -121,6 +122,8 @@ class Agent(mp.Process):
             action_space.init_converter(all_actions=archive[archive.files[0]])
 
         self.action_space = action_space
+        all_actions = np.array(action_space.all_actions)
+
         self.local_net = Net(
             self.state_size, self.action_mappings, self.action_line_mappings)  # local network
         self.local_net = cuda(self.gpu_id, self.local_net)
@@ -135,6 +138,8 @@ class Agent(mp.Process):
             else:
                 obs = self.env.reset()
 
+            maintenance_list = obs.time_next_maintenance + obs.duration_next_maintenance
+
             s = self.convert_obs(observation_space, obs)
             s = v_wrap(s[None, :])
             s = cuda(self.gpu_id, s)
@@ -142,10 +147,21 @@ class Agent(mp.Process):
             buffer_s, buffer_a, buffer_r = [], [], []
             ep_r = 0.
             ep_step = 0
+            ep_agent_num_dmd = 0
             ep_agent_num_acts = 0
             while True:
-                lines_overload = obs.rho > config["danger_threshold"]
-                if not np.any(lines_overload):
+                rho = obs.rho.copy()
+                rho[rho == 0.0] = 1.0
+                lines_overload = rho > config["danger_threshold"]
+
+                expert_act = expert_rules(
+                    self.name, maintenance_list, ep_step, action_space, obs)
+
+                if expert_act is not None:
+                    a = np.where(all_actions == expert_act)[0][0]
+                    choosen_actions = np.array([a])
+                    #print(f"Expert act: {a}")
+                elif not np.any(lines_overload):
                     choosen_actions = np.array([0])
                 else:
                     lines_overload = cuda(self.gpu_id, torch.tensor(
@@ -155,11 +171,11 @@ class Agent(mp.Process):
                     attention[attention > 1] = 1
                     choosen_actions = self.local_net.choose_action(
                         s, attention, self.g_num_candidate_acts.value)
-                    ep_agent_num_acts += 1
+                    ep_agent_num_dmd += 1
 
                 obs_previous = obs
                 a, obs_forecasted, obs_do_nothing = forecast_actions(
-                    choosen_actions, self.action_space, obs)
+                    choosen_actions, self.action_space, obs, min_threshold=0.95)
 
                 logging.info(f"{self.name}_act|||{a}")
                 act = self.action_space.convert_act(a)
@@ -167,7 +183,25 @@ class Agent(mp.Process):
                 obs, r, done, info = self.env.step(act)
 
                 r = lreward(
-                    a, self.env, obs_previous, obs_do_nothing, obs_forecasted, obs, done, info)
+                    a, self.env, obs_previous, obs_do_nothing, obs_forecasted, obs, done, info, threshold_safe=0.85)
+
+                if a > 0:
+                    if r > 0:
+                        print("+", end="")
+                    elif r < 0:
+                        print("-", end="")
+                    elif len(choosen_actions) > 0:
+                        print("*", end="")
+                    else:
+                        print("x", end="")
+                else:
+                    if len(choosen_actions) > 0:
+                        print("o", end="")
+                    else:
+                        print("0", end="")
+
+                if r > 0:
+                    ep_agent_num_acts += 1
 
                 s_ = self.convert_obs(observation_space, obs)
                 s_ = v_wrap(s_[None, :])
@@ -181,18 +215,19 @@ class Agent(mp.Process):
                 if total_step % self.update_global_iter == 0 or done:  # update global and assign to local net
                     # sync
 
-                    if len(buffer_r) > 0 and np.mean(np.abs(buffer_r)) > 0:
-                        buffer_a = cuda(self.gpu_id, torch.tensor(
-                            buffer_a, dtype=torch.long))
-                        buffer_s = cuda(self.gpu_id, torch.cat(buffer_s))
-                        push_and_pull(self.opt, self.local_net, check_point_episodes, check_point_folder, self.g_ep, l_ep,
-                                      self.name, self.rank, self.global_net, done, s_, buffer_s, buffer_a, buffer_r, self.gamma, self.gpu_id)
+                    # if len(buffer_r) > 0 and np.mean(np.abs(buffer_r)) > 0:
+                    buffer_a = cuda(self.gpu_id, torch.tensor(
+                        buffer_a, dtype=torch.long))
+                    buffer_s = cuda(self.gpu_id, torch.cat(buffer_s))
+                    push_and_pull(self.opt, self.local_net, check_point_episodes, check_point_folder, self.g_ep, l_ep,
+                                  self.name, self.rank, self.global_net, done, s_, buffer_s, buffer_a, buffer_r, self.gamma, self.gpu_id)
 
                     buffer_s, buffer_a, buffer_r = [], [], []
 
                     if done:  # done and print information
+                        print("")
                         record(config["starting_num_candidate_acts"], config["num_candidate_acts_decay_iter"], self.g_ep, self.g_step, self.g_num_candidate_acts,
-                               self.g_ep_r, ep_r, self.res_queue, self.name, ep_step, ep_agent_num_acts)
+                               self.g_ep_r, ep_r, self.res_queue, self.name, ep_step, ep_agent_num_dmd, ep_agent_num_acts)
                         break
                 s = s_
                 total_step += 1
