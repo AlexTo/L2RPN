@@ -7,25 +7,27 @@ View more on my Chinese tutorial page [莫烦Python](https://morvanzhou.github.i
 import logging
 import os
 from abc import ABC
-
+import pandas as pd
 import numpy as np
 import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.nn.functional as F
+
 from grid2op.Converter import IdToAct
 from grid2op.Environment import MultiMixEnvironment
 from setproctitle import setproctitle as ptitle
+from torch.distributions import Binomial
 
-from utils import v_wrap, set_init, push_and_pull, record, convert_obs, create_env, cuda, setup_worker_logging
+from utils import v_wrap, set_init, push_and_pull, record, convert_obs, create_env, cuda, setup_worker_logging, lreward, forecast
 
 
 class Net(nn.Module, ABC):
-    def __init__(self, s_dim, a_dim, action_mappings=None):
+    def __init__(self, s_dim, action_mappings, action_line_mappings):
         super(Net, self).__init__()
         self.s_dim = s_dim
-        self.a_dim = a_dim
         self.action_mappings = action_mappings
+        self.action_line_mappings = action_line_mappings
 
         self.pi1 = nn.Linear(s_dim, 896)
         self.pi2 = nn.Linear(896, 896)
@@ -34,10 +36,12 @@ class Net(nn.Module, ABC):
         self.v1 = nn.Linear(s_dim, 896)
         self.v2 = nn.Linear(896, 896)
         self.v3 = nn.Linear(896, 1)
+
         set_init([self.pi1, self.pi2, self.pi3, self.v1, self.v2, self.v3])
         self.distribution = torch.distributions.Categorical
 
     def forward(self, x):
+
         pi1 = torch.tanh(self.pi1(x))
         pi2 = torch.tanh(pi1)
         pi3 = self.pi3(pi2)
@@ -49,10 +53,10 @@ class Net(nn.Module, ABC):
         values = self.v3(v2)
         return logits, values
 
-    def choose_action(self, s):
+    def choose_action(self, s, attention):
         self.eval()
         logits, _ = self.forward(s)
-        prob = F.softmax(logits, dim=1).data
+        prob = F.softmax(logits * attention, dim=1).data
         m = self.distribution(prob)
         return m.sample().cpu().numpy()[0]
 
@@ -71,8 +75,7 @@ class Net(nn.Module, ABC):
 
 
 class Agent(mp.Process):
-    def __init__(self, global_net, opt, global_ep, global_ep_r, res_queue, rank, config, state_size,
-                 obs_idx, log_queue, action_mappings):
+    def __init__(self, global_net, opt, global_ep, global_ep_r, res_queue, rank, config, log_queue, action_mappings, action_line_mappings):
         super(Agent, self).__init__()
         self.rank = rank
         self.seed = config["seed"] + rank
@@ -83,7 +86,7 @@ class Agent(mp.Process):
             torch.cuda.manual_seed(self.seed)
 
         self.config = config
-        self.state_size = state_size
+        self.state_size = config["state_size"]
         self.name = 'w%02i' % rank
         self.g_ep, self.g_ep_r, self.res_queue = global_ep, global_ep_r, res_queue
         self.global_net, self.opt = global_net, opt
@@ -91,42 +94,44 @@ class Agent(mp.Process):
         self.num_episodes = config["num_episodes"]
         self.update_global_iter = config["update_global_iter"]
         self.gamma = config["gamma"]
-        self.obs_idx = obs_idx
         self.selected_attributes = config["selected_attributes"]
         self.feature_scalers = config["feature_scalers"]
         self.log_queue = log_queue
         self.action_mappings = action_mappings
+        self.action_line_mappings = action_line_mappings
 
-    def convert_obs(self, observation):
-        return convert_obs(observation, self.obs_idx, self.selected_attributes, self.feature_scalers)
+    def convert_obs(self, observation_space, observation):
+        return convert_obs(observation_space, observation, self.selected_attributes, self.feature_scalers)
 
     def run(self):
         ptitle('Training Agent: {}'.format(self.rank))
         config = self.config
         check_point_episodes = config["check_point_episodes"]
-        check_point_folder = os.path.join(config["check_point_folder"], config["env"])
+        check_point_folder = os.path.join(
+            config["check_point_folder"], config["env"])
         setup_worker_logging(self.log_queue)
 
         self.env = create_env(config["env"], self.seed)
-
+        observation_space = self.env.observation_space
         action_space = IdToAct(self.env.action_space)
-        action_space.init_converter(all_actions=os.path.join("data", f"{config['env']}_action_space.npy"))
+        action_space.init_converter(all_actions=os.path.join(
+            "data", f"{config['env']}_action_space.npy"))
         self.action_space = action_space
-        self.local_net = Net(self.state_size, action_space.size(), self.action_mappings)  # local network
+        self.local_net = Net(
+            self.state_size, self.action_mappings, self.action_line_mappings)  # local network
         self.local_net = cuda(self.gpu_id, self.local_net)
 
         total_step = 1
         l_ep = 0
         while self.g_ep.value < self.num_episodes:
-            self.print(f"{self.env.name} - {self.env.chronics_handler.get_name()}")
+            self.print(
+                f"{self.env.name} - {self.env.chronics_handler.get_name()}")
             if isinstance(self.env, MultiMixEnvironment):
-                s = self.env.reset(random=True)
+                obs = self.env.reset(random=True)
             else:
-                s = self.env.reset()
+                obs = self.env.reset()
 
-            connectivity = s.connectivity_matrix()
-
-            s = self.convert_obs(s)
+            s = self.convert_obs(observation_space, obs)
             s = v_wrap(s[None, :])
             s = cuda(self.gpu_id, s)
 
@@ -134,32 +139,31 @@ class Agent(mp.Process):
             ep_r = 0.
             ep_step = 0
             while True:
-                a = self.local_net.choose_action(s)
-                logging.info(f"{self.name}_act|||{a}")
+                lines_overload = obs.rho > 0.85
+                if not np.any(lines_overload):
+                    a = 0
+                else:
+                    lines_overload = cuda(self.gpu_id, torch.tensor(lines_overload.astype(int)).float())
+                    attention = torch.matmul(lines_overload.reshape(1, -1), self.action_line_mappings)
+                    attention[attention > 1] = 1
+                    a = self.local_net.choose_action(s, attention)
+                
                 act = self.action_space.convert_act(a)
 
-                s_, r, done, info = self.env.step(act)
+                obs_previous = obs
+                obs_do_nothing, obs_forecasted = forecast(act, self.env, obs)
 
-                connectivity_ = s_.connectivity_matrix()
+                obs, r, done, info = self.env.step(act)
 
-                topo_diff = np.sum(abs(connectivity_ - connectivity))
+                logging.info(f"{self.name}_act|||{a}")
 
-                if topo_diff == 0:
-                    r = r - 1.5
+                r = lreward(
+                    a, self.env, obs_previous, obs_do_nothing, obs_forecasted, obs, done, info)
 
-                connectivity = connectivity_
-
-                s_ = self.convert_obs(s_)
+                s_ = self.convert_obs(observation_space, obs)
                 s_ = v_wrap(s_[None, :])
                 s_ = cuda(self.gpu_id, s_)
 
-                if done:
-                    if len(info["exception"]) > 0:
-                        r = -10
-                    else:
-                        r = 10
-
-                r += 10
                 ep_r += r
                 buffer_a.append(a)
                 buffer_s.append(s)
@@ -168,16 +172,18 @@ class Agent(mp.Process):
                 if total_step % self.update_global_iter == 0 or done:  # update global and assign to local net
                     # sync
 
-                    buffer_a = cuda(self.gpu_id, torch.tensor(buffer_a, dtype=torch.int32))
-                    buffer_s = cuda(self.gpu_id, torch.cat(buffer_s))
+                    if len(buffer_r) > 0:
+                        buffer_a = cuda(self.gpu_id, torch.tensor(
+                            buffer_a, dtype=torch.long))
+                        buffer_s = cuda(self.gpu_id, torch.cat(buffer_s))
+                        push_and_pull(self.opt, self.local_net, check_point_episodes, check_point_folder, self.g_ep, l_ep, self.name,
+                                      self.rank, self.global_net, done, s_, buffer_s, buffer_a, buffer_r, self.gamma, self.gpu_id)
 
-                    push_and_pull(self.opt, self.local_net, check_point_episodes, check_point_folder, self.g_ep, l_ep,
-                                  self.name, self.rank, self.global_net, done, s_, buffer_s, buffer_a, buffer_r,
-                                  self.gamma, self.gpu_id)
                     buffer_s, buffer_a, buffer_r = [], [], []
 
                     if done:  # done and print information
-                        record(self.g_ep, self.g_ep_r, ep_r, self.res_queue, self.name, ep_step)
+                        record(self.g_ep, self.g_ep_r, ep_r,
+                               self.res_queue, self.name, ep_step)
                         break
                 s = s_
                 total_step += 1

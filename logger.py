@@ -12,7 +12,9 @@ class NeptuneLogHandler(Handler):
         self.config = config
 
     def emit(self, record: LogRecord) -> None:
+        raw_msg = record.msg
+        arr = raw_msg.split("|||")
         if self.config["neptune_enabled"]:
-            raw_msg = record.msg
-            arr = raw_msg.split("|||")
             self.neptune.log_metric(arr[0], float(arr[1]))
+        else:
+            print(f'{float(arr[1])}: {raw_msg}')
