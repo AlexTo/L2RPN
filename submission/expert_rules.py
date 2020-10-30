@@ -6,7 +6,7 @@ def reconnect_maintained_lines(maintenance_list, ep_step, action_space, obs):
     lines = np.argwhere((maintenance_list <= ep_step)
                         & (maintenance_list > 0))
     if len(lines) == 0:
-        return None, None
+        return None
 
     line_id = lines[0][0]
     if not obs.line_status[line_id]:
