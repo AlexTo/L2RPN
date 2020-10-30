@@ -392,7 +392,7 @@ def compute_impact(rho1, rho2, min_threshold=0.02, normalised=True, eps=0.000000
     return impact.sum() / ((impact != 0).sum() + eps)
 
 
-def forecast_actions(actions, action_space, obs, min_threshold=0.8, normalised=True):
+def forecast_actions(actions, action_space, obs, min_threshold=0.9, normalised=True):
     try:
         obs_do_nothing, _, done_do_nothing, _ = obs.simulate(
             action_space.convert_act(0))
@@ -428,7 +428,7 @@ def forecast_actions(actions, action_space, obs, min_threshold=0.8, normalised=T
 
 
 def lreward(action, env, obs_previous, obs_do_nothing, obs_forecasted, obs_current, done, info,
-            threshold_trivial=0.0, threshold_safe=0.8, eps=0.000001):
+            threshold_trivial=0.0, threshold_safe=0.9, eps=0.000001):
 
     action_impact = compute_impact(
         obs_forecasted.rho, obs_do_nothing.rho, min_threshold=threshold_safe)
