@@ -20,7 +20,7 @@ from setproctitle import setproctitle as ptitle
 from torch.distributions import Binomial
 from expert_rules import expert_rules
 
-from utils import v_wrap, set_init, push_and_pull, record, convert_obs, create_env, cuda, setup_worker_logging, lreward, forecast, forecast_actions
+from utils import v_wrap, set_init, push_and_pull, record, convert_obs, create_env, cuda, setup_worker_logging, lreward, forecast, forecast_actions, get_bad_lines
 
 
 class Net(nn.Module, ABC):
@@ -71,7 +71,7 @@ class Net(nn.Module, ABC):
         m = self.distribution(probs)
         exp_v = m.log_prob(a) * td.detach().squeeze()
 
-        a_loss = -exp_v + 0.01 * m.entropy()
+        a_loss = -exp_v + 0.05 * m.entropy()
         total_loss = (c_loss + a_loss).mean()
         return total_loss, a_loss.mean(), c_loss.mean()
 
@@ -150,9 +150,7 @@ class Agent(mp.Process):
             ep_agent_num_dmd = 0
             ep_agent_num_acts = 0
             while True:
-                rho = obs.rho.copy()
-                rho[rho == 0.0] = 1.0
-                lines_overload = rho > config["danger_threshold"]
+                bad_lines = get_bad_lines(obs.rho, config["danger_threshold"])
 
                 expert_act = expert_rules(
                     self.name, maintenance_list, ep_step, action_space, obs)
@@ -161,29 +159,26 @@ class Agent(mp.Process):
                     a = np.where(all_actions == expert_act)[0][0]
                     choosen_actions = np.array([a])
                     #print(f"Expert act: {a}")
-                elif not np.any(lines_overload):
+                elif bad_lines.size <= 0:
                     choosen_actions = np.array([0])
                 else:
-                    lines_overload = cuda(self.gpu_id, torch.tensor(
-                        lines_overload.astype(int)).float())
-                    attention = torch.matmul(lines_overload.reshape(
-                        1, -1), self.action_line_mappings)
-                    attention[attention > 1] = 1
-                    choosen_actions = self.local_net.choose_action(
-                        s, attention, self.g_num_candidate_acts.value)
+                    choosen_actions = np.array([])
+                    for bad_line in bad_lines:
+                        attention = self.action_line_mappings[bad_line]
+                        choosen_actions = np.append(choosen_actions, self.local_net.choose_action(s, attention, self.g_num_candidate_acts.value))
                     ep_agent_num_dmd += 1
 
                 obs_previous = obs
                 a, obs_forecasted, obs_do_nothing = forecast_actions(
-                    choosen_actions, self.action_space, obs, min_threshold=0.95)
+                    np.unique(choosen_actions), self.action_space, obs, min_threshold=0.95)
 
-                logging.info(f"{self.name}_act|||{a}")
+                #logging.info(f"{self.name}_act|||{a}")
                 act = self.action_space.convert_act(a)
 
                 obs, r, done, info = self.env.step(act)
 
                 r = lreward(
-                    a, self.env, obs_previous, obs_do_nothing, obs_forecasted, obs, done, info, threshold_safe=0.85)
+                    a, self.env, obs_previous, obs_do_nothing, obs_forecasted, obs, done, info, threshold_safe=0.9)
 
                 if a > 0:
                     if r > 0:
@@ -211,6 +206,8 @@ class Agent(mp.Process):
                 buffer_a.append(a)
                 buffer_s.append(s)
                 buffer_r.append(r)
+                
+                logging.info(f"{self.name}_log|||{ep_step},{self.env.name},{self.env.chronics_handler.get_name()},{a},{r}")
 
                 if total_step % self.update_global_iter == 0 or done:  # update global and assign to local net
                     # sync

@@ -81,7 +81,7 @@ class Agent(BaseAgent):
             attention[attention > 1] = 1
             choosen_actions = self.net.choose_action(s, attention)
 
-        a, _, _ = self.forecast_actions(choosen_actions, obs)
+        a, _, _ = self.forecast_actions(choosen_actions, self.action_space, obs)
         self.ep_step += 1
         return self.action_space.convert_act(a)
 
@@ -133,16 +133,15 @@ class Agent(BaseAgent):
             feature_vects.append(feature_vect)
         return np.concatenate(feature_vects)
 
-    def forecast_actions(self, actions, obs, min_threshold=0.9, normalised=True):
-        action_space = self.action_space
+    def forecast_actions(self, actions, action_space, obs, min_threshold=0.9, normalised=True):
         try:
             obs_do_nothing, _, done_do_nothing, _ = obs.simulate(
                 action_space.convert_act(0))
+            if done_do_nothing:
+                obs_do_nothing = obs
         except:
             obs_do_nothing = obs
 
-        if done_do_nothing:
-            obs_do_nothing = obs
 
         best_action = 0
         best_impact = 0
@@ -152,14 +151,13 @@ class Agent(BaseAgent):
             try:
                 obs_forecasted, _, done_forecasted, _ = obs.simulate(
                     action_space.convert_act(action))
+                if done_forecasted:
+                    obs_forecasted = obs_do_nothing
             except:
                 obs_forecasted = obs_do_nothing
 
-            if done_forecasted:
-                obs_forecasted = obs_do_nothing
 
-            impact = self.compute_impact(obs_forecasted.rho, obs_do_nothing.rho,
-                                         min_threshold=min_threshold, normalised=normalised)
+            impact = self.compute_impact(obs_forecasted.rho, obs_do_nothing.rho)
 
             if impact < best_impact:
                 best_action = action
@@ -167,19 +165,22 @@ class Agent(BaseAgent):
                 best_obs = obs_forecasted
 
         return best_action, best_obs, obs_do_nothing
-
-    def compute_impact(self, rho1, rho2, min_threshold=0.02, normalised=True, eps=0.0000001):
-        impact = self.transform_rho(rho1, min_threshold, normalised) - \
-            self.transform_rho(rho2, min_threshold, normalised)
-        return impact.sum() / ((impact != 0).sum() + eps)
-
+    
     def transform_rho(self, rho, min_threshold=0.02, normalised=True):
         rho_t = np.copy(rho)
         rho_t[rho_t == 0.0] = 1.01
         rho_t[rho_t > 1.0] = 1.01
-        rho_t[rho_t < min_threshold] = 0.02
+        rho_t[rho_t < min_threshold] = min_threshold
         rho_t = -np.log(1.02 - rho_t)
         return rho_t if not normalised else (rho_t / -np.log(0.01))
+
+
+    def compute_impact(self, rho1, rho2, min_threshold=0.02, normalised=True, eps=0.0000001):
+        #impact = transform_rho(rho1, min_threshold, normalised) - \
+        #    transform_rho(rho2, min_threshold, normalised)
+        impact = (self.transform_rho(rho1) -  self.transform_rho(rho2))[np.logical_or(np.logical_or(rho1 == 0, rho1 > min_threshold), 
+                                                                            np.logical_or(rho2 == 0, rho2 > min_threshold))]
+        return impact.sum() / ((impact != 0).sum() + eps)
 
     def load(self, path):
         self.net.load_state_dict(torch.load(path))

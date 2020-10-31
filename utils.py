@@ -133,16 +133,17 @@ def record(starting_num_candidate_acts, num_candidate_acts_decay_iter, global_ep
     print(
         name,
         "Ep:", global_ep.value,
-        "| Ep_r: %.0f" % global_ep_r.value,
+        f"|{global_num_candidate_acts.value}",
+        "| Ep_r: %.6f" % global_ep_r.value,
         f"| steps survived: {ep_step}",
         f"| demands: {ep_agent_num_dmd}"
         f"| acts: {ep_agent_num_acts}"
     )
-    logging.info(f"{name}_eps_reward|||{ep_r}")
-    logging.info(f"{name}_eps_steps|||{ep_step}")
-    logging.info(f"{name}_eps_agent_num_acts|||{ep_agent_num_acts}")
+    #logging.info(f"{name}_eps_reward|||{ep_r}")
+    #logging.info(f"{name}_eps_steps|||{ep_step}")
+    #logging.info(f"{name}_eps_agent_num_acts|||{ep_agent_num_acts}")
     logging.info(f"global_expected_returns|||{global_ep_r.value}")
-    logging.info(f"num_candidate_acts|||{global_num_candidate_acts.value}")
+    #logging.info(f"num_candidate_acts|||{global_num_candidate_acts.value}")
 
 
 def shuffle(x):
@@ -340,7 +341,6 @@ GOOD = "Good"
 BAD = "Bad"
 DANGER = "Danger"
 
-
 def forecast(action, env, obs):
     try:
         obs_do_nothing, _, done_do_nothing, _ = obs.simulate(
@@ -378,31 +378,41 @@ def assess_impact(rho, rho_baseline, threshold_trivial=0.01, threshold_safe=0.95
 
     return impact_level
 
+def get_bad_lines(rho, threshold=0.95):
+    rho_ = np.copy(rho)
+    rho_[rho_ == 0] = max(np.max(rho_) + 0.01, 1.0)
+    return np.flip(rho_.argsort())[:np.sum(rho_ > threshold)]
 
 def transform_rho(rho, min_threshold=0.02, normalised=True):
     rho_t = np.copy(rho)
     rho_t[rho_t == 0.0] = 1.01
     rho_t[rho_t > 1.0] = 1.01
-    rho_t[rho_t < min_threshold] = 0.02
+    rho_t[rho_t < min_threshold] = min_threshold
     rho_t = -np.log(1.02 - rho_t)
     return rho_t if not normalised else (rho_t / -np.log(0.01))
 
 
 def compute_impact(rho1, rho2, min_threshold=0.02, normalised=True, eps=0.0000001):
-    impact = transform_rho(rho1, min_threshold, normalised) - \
-        transform_rho(rho2, min_threshold, normalised)
+    #impact = transform_rho(rho1, min_threshold, normalised) - \
+    #    transform_rho(rho2, min_threshold, normalised)
+    impact = (transform_rho(rho1) -  transform_rho(rho2))[np.logical_or(np.logical_or(rho1 == 0, rho1 > min_threshold), 
+                                                                        np.logical_or(rho2 == 0, rho2 > min_threshold))]
     return impact.sum() / ((impact != 0).sum() + eps)
 
+def calculate_impact(rho, threshold=0.95):
+    rho_t = transform_rho(rho)
+    threshold_t = transform_rho(threshold)
+    return np.sum(threshold_t - rho_t[rho_t > threshold_t])
 
 def forecast_actions(actions, action_space, obs, min_threshold=0.9, normalised=True):
     try:
         obs_do_nothing, _, done_do_nothing, _ = obs.simulate(
             action_space.convert_act(0))
+        if done_do_nothing:
+            obs_do_nothing = obs
     except:
         obs_do_nothing = obs
 
-    if done_do_nothing:
-        obs_do_nothing = obs
 
     best_action = 0
     best_impact = 0
@@ -412,14 +422,13 @@ def forecast_actions(actions, action_space, obs, min_threshold=0.9, normalised=T
         try:
             obs_forecasted, _, done_forecasted, _ = obs.simulate(
                 action_space.convert_act(action))
+            if done_forecasted:
+                obs_forecasted = obs_do_nothing
         except:
             obs_forecasted = obs_do_nothing
 
-        if done_forecasted:
-            obs_forecasted = obs_do_nothing
 
-        impact = compute_impact(obs_forecasted.rho, obs_do_nothing.rho,
-                                min_threshold=min_threshold, normalised=normalised)
+        impact = compute_impact(obs_forecasted.rho, obs_do_nothing.rho)
 
         if impact < best_impact:
             best_action = action
@@ -431,18 +440,15 @@ def forecast_actions(actions, action_space, obs, min_threshold=0.9, normalised=T
 
 def lreward(action, env, obs_previous, obs_do_nothing, obs_forecasted, obs_current, done, info,
             threshold_trivial=0.0, threshold_safe=0.95, eps=0.000001):
-
-    action_impact = compute_impact(
-        obs_forecasted.rho, obs_do_nothing.rho, min_threshold=threshold_safe)
-    situation_impact = compute_impact(
-        obs_current.rho, obs_forecasted.rho, min_threshold=threshold_safe)
-    outcome_impact = compute_impact(
-        obs_current.rho, obs_previous.rho, min_threshold=threshold_safe)  # changed back to previous
-
     if done:
-        r = -0.1 if len(info["exception"]) > 0 else threshold_trivial
+        r = -0.1 if len(info["exception"]) > 0 else 0.0
     else:
-        r = -outcome_impact if action_impact < 0 else threshold_trivial
+        #impact = calculate_impact(obs_current.rho, threshold_safe) - calculate_impact(obs_do_nothing.rho, threshold_safe)
+        # r = impact if impact > 0 else 0.0
+        action_impact = compute_impact(obs_forecasted.rho, obs_do_nothing.rho, threshold_safe)
+        outcome_impact = compute_impact(obs_current.rho, obs_previous.rho, threshold_safe)
+        r = -outcome_impact if action_impact < 0 and outcome_impact < 0 else 0.0
+        
 
     # print("act:{},r: {},action[rho=({:f},{:f},{:f})],situation[rho=({:f},{:f},{:f})],outcome[rho=({:f},{:f},{:f})]".
     #      format(action, r, np.min(action_impact), np.mean(action_impact), np.max(action_impact), np.min(situation_impact), np.mean(situation_impact),
